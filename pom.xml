@@ -16,7 +16,7 @@
   </modules>
 
   <properties>
-    <maven.compiler.release>26</maven.compiler.release>
+    <maven.compiler.release>25</maven.compiler.release>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <vertx.version>5.0.8</vertx.version>
     <junit.jupiter.version>5.10.2</junit.jupiter.version>
