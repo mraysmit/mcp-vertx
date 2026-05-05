@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Upstream trade capture: Suspicious Pattern scenario -->
+<trade xmlns="urn:mars:trade:1.0">
+  <header>
+    <tradeId>T-400</tradeId>
+    <source>TradeCapture/Murex</source>
+    <timestamp>2026-03-04T14:22:17Z</timestamp>
+    <status>FAILED</status>
+    <failureReason>Suspicious pattern</failureReason>
+  </header>
+  <tradeDetails>
+    <direction>SELL</direction>
+    <instrument>
+      <type>FXForward</type>
+      <name>EUR/USD FX Forward</name>
+      <isin>N/A</isin>
+      <currency>EUR</currency>
+    </instrument>
+    <quantity>1</quantity>
+    <price>1.0854</price>
+    <notional>15000000.00</notional>
+    <tradeDate>2026-03-04</tradeDate>
+  </tradeDetails>
+  <counterparty>
+    <name>Deutsche Bank AG</name>
+    <lei>7LTWFZYICNSX8D621K86</lei>
+    <jurisdiction>DE</jurisdiction>
+    <bic>DEUTDEDBXXX</bic>
+  </counterparty>
+  <settlement>
+    <csd>EuroClear</csd>
+    <valueDate>2026-03-07</valueDate>
+    <settlementAmount currency="EUR">15000000.00</settlementAmount>
+  </settlement>
+  <book>LDN-FX</book>
+  <venue>XCSE</venue>
+  <flags>
+    <flag type="SURVEILLANCE">UNUSUAL_VOLUME</flag>
+    <flag type="PATTERN">RAPID_REVERSAL_WITHIN_24H</flag>
+  </flags>
+</trade>

@@ -13,6 +13,14 @@ param(
 $ErrorActionPreference = "Stop"
 $projectRoot = Split-Path -Parent $PSScriptRoot
 
+# ── Ensure Java 25 is used (matches maven.compiler.release=25) ───
+$java25 = "$env:USERPROFILE\.jdks\openjdk-25"
+if (Test-Path $java25) {
+    $env:JAVA_HOME = $java25
+    $env:PATH = "$java25\bin;" + $env:PATH
+    Write-Host "  JAVA_HOME set to $java25" -ForegroundColor DarkGray
+}
+
 # ── UTF-8 console encoding (prevents ? for Unicode chars) ────────
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 [Console]::InputEncoding  = [System.Text.Encoding]::UTF8
@@ -36,10 +44,10 @@ if (Test-Path $envFile) {
 
 # ── Verify required env vars ────────────────────────────────────
 if (-not $env:OPENAI_API_KEY) {
-    Write-Error "OPENAI_API_KEY is not set. Add it to $envFile or set it manually."
-    exit 1
+    Write-Warning "OPENAI_API_KEY is not set — OK if using stub LLM"
+} else {
+    Write-Host "OPENAI_API_KEY is set (length: $($env:OPENAI_API_KEY.Length))" -ForegroundColor Green
 }
-Write-Host "OPENAI_API_KEY is set (length: $($env:OPENAI_API_KEY.Length))" -ForegroundColor Green
 
 # ── Kill any previous instances on our ports ─────────────────────
 $ports = @(8080, 8081, 8082, 3001)
@@ -68,7 +76,7 @@ try {
     # ── Run the application ──────────────────────────────────────
     Write-Host "`nStarting agent application..." -ForegroundColor Cyan
     Write-Host "  API:        http://localhost:8080"
-    Write-Host "  Pipeline UI: http://localhost:8081"
+    Write-Host "  Pipeline UI: http://localhost:8081/pipeline"
     Write-Host "  Workflow UI: http://localhost:8082/workflow"
     Write-Host "  MCP Server:  http://localhost:3001"
     Write-Host ""

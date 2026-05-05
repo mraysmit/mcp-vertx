@@ -13,7 +13,7 @@
       <h1>⚡ Workflow Runner</h1>
       <span class="subtitle">Submit trade failures and watch the pipeline process them in real-time</span>
       <span class="subtitle" style="margin-left:auto;">
-        <a href="/ui/" style="color:var(--accent);text-decoration:none;">← Pipeline Config</a>
+        <a id="pipelineConfigLink" href="#" style="color:var(--accent);text-decoration:none;">← Pipeline Config</a>
       </span>
     </header>
 
@@ -22,46 +22,86 @@
       <div>
         <h2>Scenarios</h2>
         <div class="scenarios">
-          <button class="scenario-btn" onclick="loadScenario('missing-isin')">
-            <span class="scenario-label">🔍 Missing ISIN</span>
-            <span class="scenario-desc">Deterministic → Lookup &amp; Enrich → TradeRepaired</span>
-          </button>
-          <button class="scenario-btn" onclick="loadScenario('invalid-cpty')">
-            <span class="scenario-label">⚠️ Invalid Counterparty</span>
-            <span class="scenario-desc">Deterministic → Escalate → TradeEscalated</span>
-          </button>
-          <button class="scenario-btn" onclick="loadScenario('lei-not-found')">
-            <span class="scenario-label">🤖 LEI Not Found</span>
-            <span class="scenario-desc">Agent → Lookup → Classify → Raise Ticket (3-step chain)</span>
-          </button>
-          <button class="scenario-btn" onclick="loadScenario('unknown')">
-            <span class="scenario-label">🧠 Unknown Reason</span>
-            <span class="scenario-desc">Agent → Lookup → Classify → Notify Ops (3-step chain)</span>
-          </button>
-          <button class="scenario-btn" onclick="loadScenario('amount-mismatch')">
-            <span class="scenario-label">💱 Settlement Mismatch</span>
-            <span class="scenario-desc">Agent → Lookup → Classify (FX analysis) → Ticket → Notify (4-step)</span>
-          </button>
-          <button class="scenario-btn" onclick="loadScenario('duplicate')">
-            <span class="scenario-label">👯 Duplicate Trade</span>
-            <span class="scenario-desc">Agent → Lookup → Classify (cross-ref) → Ticket → PagerDuty (4-step)</span>
-          </button>
-          <button class="scenario-btn" onclick="loadScenario('regulatory')">
-            <span class="scenario-label">⏰ Regulatory Deadline</span>
-            <span class="scenario-desc">Agent → Lookup → Classify (SEC T+1) → Ticket → PagerDuty (4-step)</span>
-          </button>
-          <button class="scenario-btn" onclick="loadScenario('sanctions')">
-            <span class="scenario-label">🛡️ Sanctions Screening</span>
-            <span class="scenario-desc">Agent → Lookup → Classify (false-positive analysis) → Ticket → Event → Notify (5-step)</span>
-          </button>
-          <button class="scenario-btn" onclick="loadScenario('cascade')">
-            <span class="scenario-label">🔗 Multi-Leg Cascade</span>
-            <span class="scenario-desc">Agent → Lookup → Classify (structural reasoning) → Ticket → Event → Notify (5-step)</span>
-          </button>
-          <button class="scenario-btn" onclick="loadScenario('credit-event')">
-            <span class="scenario-label">📉 Counterparty Credit Event</span>
-            <span class="scenario-desc">Agent → Lookup → Classify (portfolio/netting) → Ticket → Event → Notify (5-step)</span>
-          </button>
+          <div class="scenario-row">
+            <button class="scenario-btn" onclick="loadScenario('missing-isin')">
+              <span class="scenario-label">🔍 Missing ISIN</span>
+              <span class="scenario-desc">Deterministic → Lookup &amp; Enrich → TradeRepaired</span>
+            </button>
+            <button class="scenario-menu-btn" onclick="toggleScenarioMenu(event,'missing-isin')" title="Show API call">···</button>
+          </div>
+          <div class="scenario-row">
+            <button class="scenario-btn" onclick="loadScenario('invalid-cpty')">
+              <span class="scenario-label">⚠️ Invalid Counterparty</span>
+              <span class="scenario-desc">Deterministic → Escalate → TradeEscalated</span>
+            </button>
+            <button class="scenario-menu-btn" onclick="toggleScenarioMenu(event,'invalid-cpty')" title="Show API call">···</button>
+          </div>
+          <div class="scenario-row">
+            <button class="scenario-btn" onclick="loadScenario('lei-not-found')">
+              <span class="scenario-label">🤖 LEI Not Found</span>
+              <span class="scenario-desc">Agent → Lookup → Classify → Raise Ticket (3-step chain)</span>
+            </button>
+            <button class="scenario-menu-btn" onclick="toggleScenarioMenu(event,'lei-not-found')" title="Show API call">···</button>
+          </div>
+          <div class="scenario-row">
+            <button class="scenario-btn" onclick="loadScenario('unknown')">
+              <span class="scenario-label">🧠 Unknown Reason</span>
+              <span class="scenario-desc">Agent → Lookup → Classify → Notify Ops (3-step chain)</span>
+            </button>
+            <button class="scenario-menu-btn" onclick="toggleScenarioMenu(event,'unknown')" title="Show API call">···</button>
+          </div>
+          <div class="scenario-row">
+            <button class="scenario-btn" onclick="loadScenario('amount-mismatch')">
+              <span class="scenario-label">💱 Settlement Mismatch</span>
+              <span class="scenario-desc">Agent → Lookup → Classify (FX analysis) → Ticket → Notify (4-step)</span>
+            </button>
+            <button class="scenario-menu-btn" onclick="toggleScenarioMenu(event,'amount-mismatch')" title="Show API call">···</button>
+          </div>
+          <div class="scenario-row">
+            <button class="scenario-btn" onclick="loadScenario('duplicate')">
+              <span class="scenario-label">👯 Duplicate Trade</span>
+              <span class="scenario-desc">Agent → Lookup → Classify (cross-ref) → Ticket → PagerDuty (4-step)</span>
+            </button>
+            <button class="scenario-menu-btn" onclick="toggleScenarioMenu(event,'duplicate')" title="Show API call">···</button>
+          </div>
+          <div class="scenario-row">
+            <button class="scenario-btn" onclick="loadScenario('regulatory')">
+              <span class="scenario-label">⏰ Regulatory Deadline</span>
+              <span class="scenario-desc">Agent → Lookup → Classify (SEC T+1) → Ticket → PagerDuty (4-step)</span>
+            </button>
+            <button class="scenario-menu-btn" onclick="toggleScenarioMenu(event,'regulatory')" title="Show API call">···</button>
+          </div>
+          <div class="scenario-row">
+            <button class="scenario-btn" onclick="loadScenario('sanctions')">
+              <span class="scenario-label">🛡️ Sanctions Screening</span>
+              <span class="scenario-desc">Agent → Lookup → Classify (false-positive analysis) → Ticket → Event → Notify (5-step)</span>
+            </button>
+            <button class="scenario-menu-btn" onclick="toggleScenarioMenu(event,'sanctions')" title="Show API call">···</button>
+          </div>
+          <div class="scenario-row">
+            <button class="scenario-btn" onclick="loadScenario('cascade')">
+              <span class="scenario-label">🔗 Multi-Leg Cascade</span>
+              <span class="scenario-desc">Agent → Lookup → Classify (structural reasoning) → Ticket → Event → Notify (5-step)</span>
+            </button>
+            <button class="scenario-menu-btn" onclick="toggleScenarioMenu(event,'cascade')" title="Show API call">···</button>
+          </div>
+          <div class="scenario-row">
+            <button class="scenario-btn" onclick="loadScenario('credit-event')">
+              <span class="scenario-label">📉 Counterparty Credit Event</span>
+              <span class="scenario-desc">Agent → Lookup → Classify (portfolio/netting) → Ticket → Event → Notify (5-step)</span>
+            </button>
+            <button class="scenario-menu-btn" onclick="toggleScenarioMenu(event,'credit-event')" title="Show API call">···</button>
+          </div>
+        </div>
+
+        <!-- ─── Scenario API call popup ──────────────────────── -->
+        <div class="scenario-popup" id="scenarioPopup" style="display:none;">
+          <div class="scenario-popup-header">
+            <span id="scenarioPopupTitle">API Call</span>
+            <button class="scenario-popup-close" onclick="closeScenarioPopup()">✕</button>
+          </div>
+          <pre class="scenario-popup-code" id="scenarioPopupCode"></pre>
+          <button class="scenario-popup-copy" onclick="copyScenarioPopup()">Copy</button>
         </div>
       </div>
 
@@ -230,6 +270,16 @@
   </div>
 
   <script>
+    // ── Bootstrap: resolve pipeline config UI link ────────────────────
+    fetch('/workflow/api/config')
+      .then(r => r.json())
+      .then(cfg => {
+        const port = cfg.pipelineUiPort || 8081;
+        const link = document.getElementById('pipelineConfigLink');
+        link.href = window.location.protocol + '//' + window.location.hostname + ':' + port + '/ui/';
+      })
+      .catch(() => { /* leave href=#, link simply won't navigate */ });
+
     // ── State ────────────────────────────────────────────────────────
     let running = false;
     let eventSource = null;
@@ -257,6 +307,75 @@
       'credit-event':    { tradeId: 'T-1000', reason: 'Counterparty credit downgrade detected',
                            counterparty: 'Sterling & Hart Capital', instrument: 'Portfolio (4 positions)', notional: '19800000', currency: 'USD', settlementDate: '2026-03-04', book: 'LDN-CR', altIds: '' },
     };
+
+    // ── Scenario popup ───────────────────────────────────────────────
+    function buildPayload(key) {
+      const s = scenarios[key];
+      if (!s) return {};
+      const p = {};
+      if (s.tradeId)       p.tradeId       = s.tradeId;
+      if (s.reason)        p.reason        = s.reason;
+      if (s.counterparty)  p.counterparty  = s.counterparty;
+      if (s.instrument)    p.instrument    = s.instrument;
+      if (s.notional)      p.notional      = s.notional;
+      if (s.currency)      p.currency      = s.currency;
+      if (s.settlementDate) p.settlementDate = s.settlementDate;
+      if (s.book)          p.book          = s.book;
+      if (s.altIds)        p.altIds        = s.altIds;
+      return p;
+    }
+
+    function toggleScenarioMenu(e, key) {
+      e.stopPropagation();
+      const popup = document.getElementById('scenarioPopup');
+      const btn = e.currentTarget;
+      const row = btn.closest('.scenario-row');
+      const s = scenarios[key];
+      const label = row.querySelector('.scenario-label').textContent;
+
+      // position popup below the row
+      const rect = row.getBoundingClientRect();
+      const panelRect = row.closest('.control-panel').getBoundingClientRect();
+      popup.style.top  = (rect.bottom - panelRect.top + row.closest('.control-panel').scrollTop + 4) + 'px';
+      popup.style.left = '0';
+      popup.style.right = '0';
+
+      if (popup.style.display !== 'none' && popup.dataset.key === key) {
+        closeScenarioPopup(); return;
+      }
+      popup.dataset.key = key;
+
+      const payload = buildPayload(key);
+      const json = JSON.stringify(payload, null, 2);
+      const curl = 'curl -s -X POST http://localhost:8080/trade/failures \\\n'
+                 + '  -H \'content-type: application/json\' \\\n'
+                 + '  -d \'' + JSON.stringify(payload) + "'";
+
+      document.getElementById('scenarioPopupTitle').textContent = label.replace(/^[^\w]+/, '').trim();
+      document.getElementById('scenarioPopupCode').textContent = curl + '\n\n# Payload\n' + json;
+      popup.style.display = 'block';
+    }
+
+    function closeScenarioPopup() {
+      document.getElementById('scenarioPopup').style.display = 'none';
+    }
+
+    function copyScenarioPopup() {
+      const text = document.getElementById('scenarioPopupCode').textContent;
+      navigator.clipboard.writeText(text).then(() => {
+        const btn = document.querySelector('.scenario-popup-copy');
+        btn.textContent = 'Copied!';
+        setTimeout(() => btn.textContent = 'Copy', 1500);
+      });
+    }
+
+    // close popup when clicking outside
+    document.addEventListener('click', e => {
+      const popup = document.getElementById('scenarioPopup');
+      if (!popup.contains(e.target) && !e.target.classList.contains('scenario-menu-btn')) {
+        closeScenarioPopup();
+      }
+    });
 
     // ── Scenario loader ──────────────────────────────────────────────
     function loadScenario(key) {

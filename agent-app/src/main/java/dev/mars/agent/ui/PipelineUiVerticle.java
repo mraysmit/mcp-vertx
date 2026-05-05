@@ -50,11 +50,23 @@ public class PipelineUiVerticle extends AbstractVerticle {
         .end(toJson(pipelineConfig).encodePrettily());
     });
 
+    // ── Raw YAML source ─────────────────────────────────────────────
+    String yamlResource = System.getProperty("pipeline.config", "pipeline.yaml");
+    router.get("/api/pipeline/yaml").handler(ctx ->
+        vertx.fileSystem().readFile(yamlResource)
+            .onSuccess(buf -> ctx.response()
+                .putHeader("content-type", "text/plain;charset=UTF-8")
+                .putHeader("access-control-allow-origin", "*")
+                .putHeader("content-disposition", "inline; filename=\"" + yamlResource + "\"")
+                .end(buf))
+            .onFailure(err -> ctx.response().setStatusCode(404)
+                .end("YAML source not found: " + yamlResource)));
+
     // ── Static UI ───────────────────────────────────────────────────
     // Self-contained HTML page — serve index.html directly (no StaticHandler)
-    router.route("/ui/*").handler(ctx -> {
+    router.route("/pipeline/*").handler(ctx -> {
       String path = ctx.request().path();
-      if (path.equals("/ui/") || path.equals("/ui/index.html")) {
+      if (path.equals("/pipeline/") || path.equals("/pipeline/index.html")) {
         vertx.fileSystem().readFile("webroot/index.html")
           .onSuccess(buf -> ctx.response()
               .putHeader("content-type", "text/html;charset=UTF-8")
@@ -78,8 +90,8 @@ public class PipelineUiVerticle extends AbstractVerticle {
         ctx.response().setStatusCode(404).end();
       }
     });
-    router.get("/ui").handler(ctx ->
-      ctx.response().putHeader("location", "/ui/").setStatusCode(302).end());
+    router.get("/pipeline").handler(ctx ->
+      ctx.response().putHeader("location", "/pipeline/").setStatusCode(302).end());
 
     int port = config().getInteger("ui.port", 8081);
     vertx.createHttpServer()
@@ -87,7 +99,7 @@ public class PipelineUiVerticle extends AbstractVerticle {
       .listen(port)
       .onSuccess(server -> {
         LOG.info("Pipeline UI server started on port " + server.actualPort()
-            + " — open http://localhost:" + server.actualPort() + "/ui");
+            + " — open http://localhost:" + server.actualPort() + "/pipeline");
         startPromise.complete();
       })
       .onFailure(startPromise::fail);

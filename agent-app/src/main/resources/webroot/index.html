@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Pipeline Visualisation — vertx5-mcp</title>
+<title>Pipeline — vertx5-mcp</title>
 <link rel="stylesheet" href="index.css">
 </head>
 <body>
@@ -11,7 +11,10 @@
 <div id="loading">Loading pipeline configuration…</div>
 <div id="error"></div>
 <div id="app" style="display:none">
-  <h1>Pipeline Workflow</h1>
+  <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:4px;">
+    <h1>Pipeline</h1>
+    <button id="yaml-btn" onclick="openYaml()" style="background:none;border:1px solid var(--border);border-radius:6px;cursor:pointer;font-size:13px;color:var(--accent);padding:4px 12px;font-family:'SFMono-Regular',Consolas,monospace;">📄 pipeline.yaml</button>
+  </div>
   <p class="subtitle">Live view of <code>pipeline.yaml</code> — loaded from <code>/api/pipeline</code></p>
 
   <div class="layout-row">
@@ -20,6 +23,16 @@
     </div>
     <div class="sidebar" id="sidebar"></div>
   </div>
+</div>
+
+<!-- YAML drawer -->
+<div id="yaml-overlay" onclick="closeYaml()" style="display:none"></div>
+<div id="yaml-drawer">
+  <div id="yaml-drawer-header">
+    <span>📄 pipeline.yaml</span>
+    <button onclick="closeYaml()" id="yaml-close">✕</button>
+  </div>
+  <pre id="yaml-content"></pre>
 </div>
 
 <script>
@@ -270,6 +283,63 @@
 
     sb.innerHTML = shtml;
   }
+  window.openYaml = function() {
+    const drawer = document.getElementById('yaml-drawer');
+    const overlay = document.getElementById('yaml-overlay');
+    const pre = document.getElementById('yaml-content');
+    overlay.style.display = 'block';
+    drawer.classList.add('open');
+    if (pre.dataset.loaded) return;
+    pre.textContent = 'Loading…';
+    fetch('/api/pipeline/yaml')
+      .then(r => r.text())
+      .then(yaml => {
+        pre.innerHTML = highlightYaml(yaml);
+        pre.dataset.loaded = '1';
+      })
+      .catch(err => { pre.textContent = 'Error: ' + err; });
+  };
+
+  window.closeYaml = function() {
+    document.getElementById('yaml-drawer').classList.remove('open');
+    document.getElementById('yaml-overlay').style.display = 'none';
+  };
+
+  function highlightYaml(src) {
+    return src
+      .split('\n')
+      .map(line => {
+        const e = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+        // comment
+        if (/^\s*#/.test(line)) return '<span class="yc">' + e(line) + '</span>';
+        // key: value
+        const m = line.match(/^(\s*)([-\w.]+)(\s*:\s*)(.*)$/);
+        if (m) {
+          let val = m[4];
+          let vs = '';
+          if (val === '' || val === undefined) {
+            vs = '';
+          } else if (/^['"]/.test(val)) {
+            vs = '<span class="ys">' + e(val) + '</span>';
+          } else if (/^(true|false|null)$/.test(val)) {
+            vs = '<span class="yk">' + e(val) + '</span>';
+          } else if (/^-?[0-9]/.test(val)) {
+            vs = '<span class="yn">' + e(val) + '</span>';
+          } else {
+            vs = '<span class="yv">' + e(val) + '</span>';
+          }
+          return e(m[1]) + '<span class="ykey">' + e(m[2]) + '</span>' + e(m[3]) + vs;
+        }
+        // list item
+        if (/^\s*-\s/.test(line)) {
+          return line.replace(/^(\s*-\s)(.*)$/, (_, dash, rest) =>
+            e(dash) + '<span class="yv">' + e(rest) + '</span>');
+        }
+        return e(line);
+      })
+      .join('\n');
+  }
+
 })();
 </script>
 </body>

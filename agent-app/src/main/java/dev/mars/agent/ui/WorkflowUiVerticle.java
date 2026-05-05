@@ -42,6 +42,7 @@ public class WorkflowUiVerticle extends AbstractVerticle {
   private final String inboundAddress;
   private final String eventsAddress;
   private final long requestTimeoutMs;
+  private final int pipelineUiPort;
 
   /**
    * Active SSE connections keyed by tradeId. Multiple connections for the
@@ -56,11 +57,13 @@ public class WorkflowUiVerticle extends AbstractVerticle {
    * @param inboundAddress   event bus address to send trade failures to (e.g. "trade.failures")
    * @param eventsAddress    event bus address to subscribe to for domain events (e.g. "events.out")
    * @param requestTimeoutMs timeout for the pipeline request/reply
+   * @param pipelineUiPort   port the Pipeline Config UI is running on (e.g. 8081)
    */
-  public WorkflowUiVerticle(String inboundAddress, String eventsAddress, long requestTimeoutMs) {
+  public WorkflowUiVerticle(String inboundAddress, String eventsAddress, long requestTimeoutMs, int pipelineUiPort) {
     this.inboundAddress = inboundAddress;
     this.eventsAddress = eventsAddress;
     this.requestTimeoutMs = requestTimeoutMs;
+    this.pipelineUiPort = pipelineUiPort;
   }
 
   @Override
@@ -69,6 +72,13 @@ public class WorkflowUiVerticle extends AbstractVerticle {
 
     // ── Body handler for POST ─────────────────────────────────────
     router.post("/workflow/api/*").handler(BodyHandler.create());
+
+    // ── Config endpoint ───────────────────────────────────────────
+    router.get("/workflow/api/config").handler(ctx ->
+        ctx.response()
+            .putHeader("content-type", "application/json")
+            .putHeader("access-control-allow-origin", "*")
+            .end(new JsonObject().put("pipelineUiPort", pipelineUiPort).encode()));
 
     // ── SSE endpoint for domain events ────────────────────────────
     router.get("/workflow/api/events").handler(ctx -> {

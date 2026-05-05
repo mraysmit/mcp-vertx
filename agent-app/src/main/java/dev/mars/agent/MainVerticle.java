@@ -196,7 +196,8 @@ public class MainVerticle extends AbstractVerticle {
       .compose(id -> {
         LOG.info("Deploying WorkflowUiVerticle on port " + childConfig.getInteger("workflow.port", 8082));
         return vertx.deployVerticle(
-            new WorkflowUiVerticle(inbound, events, cfg.http().requestTimeoutMs()), childOpts);
+            new WorkflowUiVerticle(inbound, events, cfg.http().requestTimeoutMs(),
+                childConfig.getInteger("ui.port", 8081)), childOpts);
       })
       .onSuccess(id -> {
         int httpPort      = childConfig.getInteger("http.port", 8080);
@@ -208,7 +209,7 @@ public class MainVerticle extends AbstractVerticle {
         String api    = "http://localhost:" + httpPort + cfg.http().route();
         String health = "http://localhost:" + httpPort + "/health";
         String mcp    = mcpOn ? "http://localhost:" + mcpPort + "/mcp" : "(disabled)";
-        String ui       = "http://localhost:" + uiPort + "/ui/";
+        String ui       = "http://localhost:" + uiPort + "/pipeline/";
         String workflow = "http://localhost:" + workflowPort + "/workflow/";
 
         int W = 56; // inner width between ║ chars
