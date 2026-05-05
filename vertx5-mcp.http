@@ -1,0 +1,184 @@
+# vertx5-mcp — HTTP request collection
+# Works with: HTTPie Desktop · VS Code REST Client · JetBrains HTTP Client
+# ─────────────────────────────────────────────────────────────────────────────
+
+@agentBase    = http://localhost:8080
+@mcpBase      = http://localhost:3001
+@mcpSessionId = <replace-after-initialize>
+
+
+# ══════════════════════════════════════════════════════════════════
+#  Health
+# ══════════════════════════════════════════════════════════════════
+
+### Health Check
+GET {{agentBase}}/health
+
+
+# ══════════════════════════════════════════════════════════════════
+#  Trade Failures
+# ══════════════════════════════════════════════════════════════════
+
+### 1) T-100 — Known deterministic (Missing ISIN)
+POST {{agentBase}}/trade/failures
+Content-Type: application/json
+
+{
+  "tradeId": "T-100",
+  "reason": "Missing ISIN"
+}
+
+### 2) T-200 — Unknown failure (agent classification)
+POST {{agentBase}}/trade/failures
+Content-Type: application/json
+
+{
+  "tradeId": "T-200",
+  "reason": "LEI not found in registry"
+}
+
+### 3) T-500 — Settlement amount mismatch · FX root-cause hypothesis (4 steps)
+POST {{agentBase}}/trade/failures
+Content-Type: application/json
+
+{
+  "tradeId": "T-500",
+  "reason": "Settlement amount mismatch detected"
+}
+
+### 4) T-600 — Duplicate trade detection · risk exposure analysis (4 steps)
+POST {{agentBase}}/trade/failures
+Content-Type: application/json
+
+{
+  "tradeId": "T-600",
+  "reason": "Possible duplicate trade execution"
+}
+
+### 5) T-700 — Regulatory T+1 deadline · compliance urgency (4 steps)
+POST {{agentBase}}/trade/failures
+Content-Type: application/json
+
+{
+  "tradeId": "T-700",
+  "reason": "Regulatory T+1 deadline at risk"
+}
+
+### 6) T-800 — Sanctions screening · adaptive false-positive analysis (5 steps)
+POST {{agentBase}}/trade/failures
+Content-Type: application/json
+
+{
+  "tradeId": "T-800",
+  "reason": "OFAC screening flag on counterparty"
+}
+
+### 7) T-900 — Multi-leg cascade · structural reasoning (5 steps)
+POST {{agentBase}}/trade/failures
+Content-Type: application/json
+
+{
+  "tradeId": "T-900",
+  "reason": "Linked trade cascade failure on swap leg"
+}
+
+### 8) T-1000 — Counterparty credit event · portfolio analysis (5 steps)
+POST {{agentBase}}/trade/failures
+Content-Type: application/json
+
+{
+  "tradeId": "T-1000",
+  "reason": "Counterparty credit downgrade to CCC+"
+}
+
+
+# ══════════════════════════════════════════════════════════════════
+#  MCP — Streamable HTTP (2025-03-26)
+#  Step 1: run "Initialize session" and copy Mcp-Session-Id from
+#          the response header into @mcpSessionId above.
+# ══════════════════════════════════════════════════════════════════
+
+### MCP 1) Initialize session
+POST {{mcpBase}}/mcp
+Content-Type: application/json
+Accept: application/json
+
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "initialize",
+  "params": {
+    "protocolVersion": "2025-03-26",
+    "capabilities": {},
+    "clientInfo": { "name": "http-client", "version": "1.0" }
+  }
+}
+
+### MCP 2) List tools
+POST {{mcpBase}}/mcp
+Content-Type: application/json
+Accept: application/json
+Mcp-Session-Id: {{mcpSessionId}}
+
+{
+  "jsonrpc": "2.0",
+  "id": 2,
+  "method": "tools/list"
+}
+
+### MCP 3) Invoke tool — case.raiseTicket
+POST {{mcpBase}}/mcp
+Content-Type: application/json
+Accept: application/json
+Mcp-Session-Id: {{mcpSessionId}}
+
+{
+  "jsonrpc": "2.0",
+  "id": 3,
+  "method": "tools/call",
+  "params": {
+    "name": "case.raiseTicket",
+    "arguments": {
+      "tradeId": "T-300",
+      "category": "ReferenceData",
+      "summary": "MCP test"
+    }
+  }
+}
+
+### MCP 4) Ping
+POST {{mcpBase}}/mcp
+Content-Type: application/json
+Accept: application/json
+Mcp-Session-Id: {{mcpSessionId}}
+
+{
+  "jsonrpc": "2.0",
+  "id": 4,
+  "method": "ping"
+}
+
+### MCP 5) Terminate session
+DELETE {{mcpBase}}/mcp
+Mcp-Session-Id: {{mcpSessionId}}
+
+
+# ══════════════════════════════════════════════════════════════════
+#  MCP — Legacy SSE (2024-11-05)
+#  Step 1: open GET /sse in a browser or with --stream in HTTPie.
+#          Copy the sessionId from the "endpoint" SSE event into
+#          @mcpSessionId above, then run the POST below.
+# ══════════════════════════════════════════════════════════════════
+
+### MCP Legacy 1) Open SSE stream  (use HTTPie: http --stream GET {{mcpBase}}/sse)
+GET {{mcpBase}}/sse
+
+### MCP Legacy 2) tools/list via POST /message
+POST {{mcpBase}}/message?sessionId={{mcpSessionId}}
+Content-Type: application/json
+
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "tools/list"
+}

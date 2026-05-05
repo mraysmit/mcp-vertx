@@ -13,6 +13,12 @@ param(
 $ErrorActionPreference = "Stop"
 $projectRoot = Split-Path -Parent $PSScriptRoot
 
+# ── UTF-8 console encoding (prevents ? for Unicode chars) ────────
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+[Console]::InputEncoding  = [System.Text.Encoding]::UTF8
+$OutputEncoding           = [System.Text.Encoding]::UTF8
+chcp 65001 | Out-Null
+
 # ── Load .env file ───────────────────────────────────────────────
 $envFile = Join-Path $projectRoot ".env"
 if (Test-Path $envFile) {
@@ -66,7 +72,7 @@ try {
     Write-Host "  Workflow UI: http://localhost:8082/workflow"
     Write-Host "  MCP Server:  http://localhost:3001"
     Write-Host ""
-    mvn exec:java "-Dexec.mainClass=dev.mars.agent.Main" -pl agent-app
+    mvn exec:java "-Dexec.mainClass=dev.mars.agent.Main" "-Dexec.jvmArgs=-Dfile.encoding=UTF-8 -Dstdout.encoding=UTF-8 -Dstderr.encoding=UTF-8" -pl agent-app
 } finally {
     Pop-Location
 }
