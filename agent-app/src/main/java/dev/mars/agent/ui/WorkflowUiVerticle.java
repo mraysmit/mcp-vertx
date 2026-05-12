@@ -197,6 +197,13 @@ public class WorkflowUiVerticle extends AbstractVerticle {
                 .putHeader("content-type", "application/javascript;charset=UTF-8")
                 .end(buf))
             .onFailure(err -> routingCtx.response().setStatusCode(404).end());
+      } else if (path.endsWith(".json")) {
+        String fileName = path.substring(path.lastIndexOf('/') + 1);
+        vertx.fileSystem().readFile("webroot/" + fileName)
+            .onSuccess(buf -> routingCtx.response()
+                .putHeader("content-type", "application/json;charset=UTF-8")
+                .end(buf))
+            .onFailure(err -> routingCtx.response().setStatusCode(404).end());
       } else {
         routingCtx.response().setStatusCode(404).end();
       }
