@@ -276,7 +276,7 @@
       .then(cfg => {
         const port = cfg.pipelineUiPort || 8081;
         const link = document.getElementById('pipelineConfigLink');
-        link.href = window.location.protocol + '//' + window.location.hostname + ':' + port + '/ui/';
+        link.href = window.location.protocol + '//' + window.location.hostname + ':' + port + '/pipeline/';
       })
       .catch(() => { /* leave href=#, link simply won't navigate */ });
 
