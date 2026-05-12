@@ -83,12 +83,12 @@ tools:
 # To switch to a real LLM, comment out the stub section and uncomment
 # the openai section below:
 llm:
-  type: "stub"
-#  type: "openai"
-#  params:
-#    endpoint: "https://api.openai.com/v1"
-#    apiKey: "${OPENAI_API_KEY}"
-#    model: "gpt-4o"
+#  type: "stub"
+  type: "openai"
+  params:
+    endpoint: "https://api.openai.com/v1"
+    apiKey: "${OPENAI_API_KEY}"
+    model: "gpt-4o"
 # ── MCP server ───────────────────────────────────────────────────────
 # When enabled, exposes the agent's tools via the Model Context Protocol
 # (HTTP + SSE transport) so external MCP clients (e.g. Claude Desktop,
