@@ -51,6 +51,24 @@ public class PublishEventTool implements Tool {
   }
 
   @Override
+  public String instructions() {
+    return """
+        ### events.publish
+        Emit a domain event so downstream systems can react autonomously.
+        Use these event types based on the situation:
+        - `TradeEscalated`    — general escalation for HIGH severity failures
+        - `ComplianceHold`    — REQUIRED for any sanctions or AML issue (CRITICAL)
+        - `CreditReview`      — REQUIRED when a counterparty credit event is detected
+        - `RegulatoryBreach`  — REQUIRED when a regulatory reporting deadline is missed
+        - `DuplicateSuspect`  — when a probable duplicate trade is detected
+        - `SettlementFailed`  — when a settlement instruction has definitively failed
+        Always include `tradeId` and a `reason` field in the event payload.
+        Publish events BEFORE raising tickets so downstream systems are notified promptly.
+        Publishing an event is a terminal action for compliance/credit events.
+        """;
+  }
+
+  @Override
   public String description() {
     return "Publishes a domain event to the event bus for downstream consumers.";
   }

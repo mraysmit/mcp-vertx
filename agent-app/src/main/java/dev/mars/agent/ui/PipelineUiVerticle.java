@@ -1,12 +1,15 @@
 package dev.mars.agent.ui;
 
 import dev.mars.agent.config.PipelineConfig;
+import dev.mars.mcp.tool.Tool;
 import io.vertx.core.AbstractVerticle;
 import io.vertx.core.Promise;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import io.vertx.ext.web.Router;
 
+import java.util.Collection;
+import java.util.Collections;
 import java.util.logging.Logger;
 
 /**
@@ -33,9 +36,15 @@ public class PipelineUiVerticle extends AbstractVerticle {
   private static final Logger LOG = Logger.getLogger(PipelineUiVerticle.class.getName());
 
   private final PipelineConfig pipelineConfig;
+  private final Collection<Tool> tools;
 
   public PipelineUiVerticle(PipelineConfig pipelineConfig) {
+    this(pipelineConfig, Collections.emptyList());
+  }
+
+  public PipelineUiVerticle(PipelineConfig pipelineConfig, Collection<Tool> tools) {
     this.pipelineConfig = pipelineConfig;
+    this.tools = tools;
   }
 
   @Override
@@ -43,6 +52,20 @@ public class PipelineUiVerticle extends AbstractVerticle {
     Router router = Router.router(vertx);
 
     // ── JSON API ────────────────────────────────────────────────────
+    router.get("/api/tools").handler(ctx -> {
+      JsonArray arr = new JsonArray();
+      for (Tool t : tools) {
+        arr.add(new JsonObject()
+            .put("name", t.name())
+            .put("description", t.description())
+            .put("schema", t.schema()));
+      }
+      ctx.response()
+          .putHeader("content-type", "application/json")
+          .putHeader("access-control-allow-origin", "*")
+          .end(arr.encode());
+    });
+
     router.get("/api/pipeline").handler(ctx -> {
       ctx.response()
         .putHeader("content-type", "application/json")

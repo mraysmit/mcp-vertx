@@ -55,6 +55,18 @@ public interface Tool {
   }
 
   /**
+   * Domain-specific instructions for the LLM on when and how to use this tool.
+   *
+   * <p>These are assembled into the system prompt at runtime so that each tool
+   * carries its own guidance — no domain knowledge lives in the LLM client.
+   *
+   * @return instructions text, or empty string if none
+   */
+  default String instructions() {
+    return "";
+  }
+
+  /**
    * JSON Schema describing the parameters this tool accepts.
    *
    * <p>The returned object follows

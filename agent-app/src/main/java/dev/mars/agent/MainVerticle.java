@@ -191,7 +191,7 @@ public class MainVerticle extends AbstractVerticle {
       })
       .compose(id -> {
         LOG.info("Deploying PipelineUiVerticle on port " + childConfig.getInteger("ui.port", 8081));
-        return vertx.deployVerticle(new PipelineUiVerticle(cfg), childOpts);
+        return vertx.deployVerticle(new PipelineUiVerticle(cfg, tools.values()), childOpts);
       })
       .compose(id -> {
         LOG.info("Deploying WorkflowUiVerticle on port " + childConfig.getInteger("workflow.port", 8082));

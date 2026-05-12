@@ -64,6 +64,20 @@ public class NotifyTool implements Tool {
   }
 
   @Override
+  public String instructions() {
+    return """
+        ### comms.notify
+        Alert the appropriate team after classification. Match channel to severity:
+        - LOW / MEDIUM → `email`   — team: Operations or ReferenceData
+        - HIGH         → `slack`   — team: TradingDesk or SeniorOperations
+        - CRITICAL     → `pagerduty` — team: RiskManagement or Compliance
+        Subject format: `<SEVERITY>: <brief issue> for trade <tradeId>`
+        Body should include: trade ID, failure reason, classification category, and next steps.
+        Always send a notification before or alongside raising a ticket.
+        """;
+  }
+
+  @Override
   public String description() {
     return "Sends a notification to the appropriate team via email, Slack, or PagerDuty.";
   }

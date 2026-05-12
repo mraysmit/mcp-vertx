@@ -63,6 +63,26 @@ public class ClassifyTool implements Tool {
   }
 
   @Override
+  public String instructions() {
+    return """
+        ### case.classify
+        Use this AFTER data.lookup to categorise the failure. Always include a clear `reason`.
+        Categories:
+        - `ReferenceData`   — missing or invalid LEI, ISIN, counterparty data
+        - `Settlement`      — amount mismatch, unmatched settlement, failed CSD instruction
+        - `Duplicate`       — probable duplicate detected via relatedTrades matchScore > 0.95
+        - `Compliance`      — sanctions, AML, or regulatory hold
+        - `Regulatory`      — deadline breach, reporting obligation missed
+        - `CreditRisk`      — counterparty credit event or rating downgrade
+        Severity rules:
+        - LOW      — minor data gap, no financial exposure, auto-remediable
+        - MEDIUM   — data mismatch, manual correction needed, exposure < $500k
+        - HIGH     — counterparty or settlement issue, exposure > $500k or deadline risk
+        - CRITICAL — sanctions hit, credit event, cascading failure, or regulatory breach
+        """;
+  }
+
+  @Override
   public String description() {
     return "Classifies a trade failure by category and severity based on the gathered data.";
   }

@@ -196,6 +196,8 @@ function resetAll() {
   document.getElementById('runBtn').textContent = '▶ Run Workflow';
   document.getElementById('runBtn').classList.remove('running');
   document.getElementById('summaryBar').style.display = 'none';
+  const rs = document.getElementById('result-steps');
+  if (rs) { rs.innerHTML = ''; rs.style.display = 'none'; }
   // reset stages
   document.querySelectorAll('.stage-node').forEach(n => {
     n.className = 'stage-node idle';
@@ -468,8 +470,9 @@ async function runWorkflow() {
     logEvent('result', '✅ Workflow Complete',
       'Path: ' + path + '\n' + JSON.stringify(result, null, 2), 'result');
 
-    // summary bar
+    // summary bar + results card
     showSummary(path, result);
+    showResultsCard(path, result, tradeId);
 
   } catch (err) {
     setStage('processor', 'error', 'Error');
@@ -606,6 +609,99 @@ function showSummary(path, result) {
   const badge = document.getElementById('summaryPath');
   badge.textContent = path;
   badge.className = 'path-badge path-' + path;
+}
+
+// ── Results Card ─────────────────────────────────────────────
+function summariseToolResult(tool, toolResult) {
+  if (!toolResult) return '';
+  if (tool.startsWith('data.') || tool.startsWith('data_')) {
+    const cpty       = toolResult.data?.counterparty?.name;
+    const isin       = toolResult.data?.security?.isin;
+    const settlSt    = toolResult.data?.settlement?.status;
+    const related    = toolResult.data?.relatedTrades?.length;
+    const parts = [];
+    if (cpty)      parts.push(cpty);
+    if (isin)      parts.push(isin);
+    if (settlSt)   parts.push('settlement: ' + settlSt);
+    if (related)   parts.push(related + ' related trade' + (related > 1 ? 's' : ''));
+    return parts.join(' · ') || 'Trade data retrieved';
+  }
+  if (tool.startsWith('case.cl') || tool.startsWith('case_cl')) {
+    const cat = toolResult.category;
+    const sev = toolResult.severity;
+    if (cat && sev) return cat + ' / ' + sev;
+    return toolResult.status || 'Classified';
+  }
+  if (tool.startsWith('case.ra') || tool.startsWith('case_ra')) {
+    const id      = toolResult.ticketId;
+    const summary = toolResult.summary;
+    if (id && summary) return id + ': ' + (summary.length > 55 ? summary.slice(0, 55) + '\u2026' : summary);
+    if (summary)       return summary.length > 65 ? summary.slice(0, 65) + '\u2026' : summary;
+    return 'Ticket ' + (id || 'created');
+  }
+  if (tool.startsWith('comms.') || tool.startsWith('comms_')) {
+    const ch   = toolResult.channel;
+    const team = toolResult.team;
+    const id   = toolResult.notificationId;
+    if (ch && team) return ch + ' \u2192 ' + team + (id ? ' (' + id + ')' : '');
+    return 'Notification sent';
+  }
+  if (tool.startsWith('events.') || tool.startsWith('events_')) {
+    const type = toolResult.event?.type || toolResult.type;
+    return type ? 'Published: ' + type : 'Event published';
+  }
+  return toolResult.status || 'Done';
+}
+
+function showResultsCard(path, result, tradeId) {
+  const stepsEl = document.getElementById('result-steps');
+  if (!stepsEl) return;
+  const trail = result.trail || [];
+
+  const toolIcon = t =>
+    t.startsWith('data.')   || t.startsWith('data_')   ? '🔎' :
+    t.startsWith('case.cl') || t.startsWith('case_cl') ? '🏷️' :
+    t.startsWith('case.ra') || t.startsWith('case_ra') ? '🎫' :
+    t.startsWith('comms.')  || t.startsWith('comms_')  ? '📣' :
+    t.startsWith('events.') || t.startsWith('events_') ? '📤' : '🔧';
+
+  let stepsHtml = '';
+  if (path === 'agent' && trail.length > 0) {
+    for (let i = 0; i < trail.length; i++) {
+      const entry      = trail[i];
+      const cmd        = entry.command || {};
+      const tool       = cmd.tool || 'unknown';
+      const reasoning  = cmd.reasoning || '';
+      const toolResult = entry.toolResult || {};
+      const summary    = summariseToolResult(tool, toolResult);
+      stepsHtml +=
+        '<div class="result-step">' +
+          '<span class="result-step-num">' + (i + 1) + '</span>' +
+          '<span class="result-step-icon">' + toolIcon(tool) + '</span>' +
+          '<div class="result-step-body">' +
+            '<div class="result-step-tool">' + escapeHtml(tool) + '</div>' +
+            (reasoning ? '<div class="result-step-reasoning">' + escapeHtml(reasoning) + '</div>' : '') +
+            (summary   ? '<div class="result-step-summary">' + escapeHtml(summary) + '</div>' : '') +
+          '</div>' +
+          '<span class="result-step-ok">✓</span>' +
+        '</div>';
+    }
+  } else if (path === 'deterministic') {
+    const evtType = result.resultEvent?.type || result.result?.type || '';
+    stepsHtml =
+      '<div class="result-step">' +
+        '<span class="result-step-num">1</span>' +
+        '<span class="result-step-icon">🔧</span>' +
+        '<div class="result-step-body">' +
+          '<div class="result-step-tool">Deterministic Handler</div>' +
+          (evtType ? '<div class="result-step-summary">' + escapeHtml(evtType) + '</div>' : '') +
+        '</div>' +
+        '<span class="result-step-ok">✓</span>' +
+      '</div>';
+  }
+
+  stepsEl.innerHTML = stepsHtml;
+  stepsEl.style.display = stepsHtml ? 'flex' : 'none';
 }
 
 function closeOverlay() {

@@ -19,7 +19,7 @@ addresses:
 http:
   port: 8080
   route: "/trade/failures"
-  requestTimeoutMs: 10000
+  requestTimeoutMs: 60000
 
 # ── Schema / field validation ────────────────────────────────────────────────
 schema:
@@ -42,7 +42,7 @@ schema:
 # ── Agent settings ───────────────────────────────────────────────────────────
 agent:
   maxSteps: 8
-  timeoutMs: 10000
+  timeoutMs: 60000
 
 # ── Deterministic handlers (reason → handler type + params) ──────────────────
 # Supported types:

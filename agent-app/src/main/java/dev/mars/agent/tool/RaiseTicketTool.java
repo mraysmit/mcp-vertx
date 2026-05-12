@@ -64,6 +64,21 @@ public class RaiseTicketTool implements Tool {
   }
 
   @Override
+  public String instructions() {
+    return """
+        ### case.raiseTicket
+        Create a support ticket when the failure requires manual human investigation.
+        Always raise a ticket for MEDIUM, HIGH, or CRITICAL severity.
+        For LOW severity, a ticket is optional — use judgment based on recurrence risk.
+        - `category` must match the case.classify output.
+        - `summary` should be one concise sentence (≤ 120 chars) describing the problem.
+        - `detail` should include: what was found in lookup, classification reasoning,
+          what has already been done (notifications, events published), and suggested next action.
+        Raising a ticket is a terminal action — do not continue investigation afterwards.
+        """;
+  }
+
+  @Override
   public String description() {
     return "Creates a support ticket for a trade failure requiring manual investigation.";
   }

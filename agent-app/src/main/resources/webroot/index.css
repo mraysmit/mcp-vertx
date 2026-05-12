@@ -152,6 +152,16 @@ h1 {
   padding: 10px 14px;
 }
 
+.mini-card-clickable {
+  cursor: pointer;
+  transition: border-color .15s, background .15s;
+}
+
+.mini-card-clickable:hover {
+  border-color: var(--accent);
+  background: #1c2128;
+}
+
 .mini-card-title {
   font-size: 13px;
   font-weight: 600;

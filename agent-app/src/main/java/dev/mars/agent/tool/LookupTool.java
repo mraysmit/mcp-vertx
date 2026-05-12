@@ -294,6 +294,24 @@ public class LookupTool implements Tool {
   }
 
   @Override
+  public String instructions() {
+    return """
+        ### data.lookup
+        Use this as the FIRST step in every investigation. Retrieve reference and enrichment
+        data for the trade before taking any action.
+        - Request all relevant fields: counterparty, security, settlement, fx, relatedTrades.
+        - Key signals to look for in the result:
+          - `counterparty.lei = "MISSING"` → ReferenceData failure, likely HIGH severity.
+          - `settlement.status = "AMOUNT_MISMATCH"` → check `fx` for rate discrepancy.
+          - `settlement.status = "PENDING_REVIEW"` + `relatedTrades` present → probable duplicate.
+          - `counterparty.sanctions` present → CRITICAL, must publish ComplianceHold.
+          - `counterparty.creditEvent` present → CRITICAL, must publish CreditReview.
+          - `settlement.regulatoryDeadline` in the past → HIGH, publish RegulatoryBreach.
+        - Do not skip this step even if the failure reason seems obvious.
+        """;
+  }
+
+  @Override
   public String description() {
     return "Looks up reference and enrichment data for a trade from external systems "
         + "(counterparty, security, settlement details).";

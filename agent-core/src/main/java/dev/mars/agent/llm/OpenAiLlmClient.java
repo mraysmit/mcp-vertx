@@ -9,7 +9,9 @@ import io.vertx.ext.web.client.WebClient;
 import io.vertx.ext.web.client.WebClientOptions;
 
 import java.util.Collection;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.logging.Logger;
 
 /**
@@ -47,6 +49,8 @@ public class OpenAiLlmClient implements LlmClient {
   private final String model;
   private final JsonArray toolsDef;
   private final String systemPrompt;
+  /** Maps sanitized API name (dots replaced with underscores) back to real tool name. */
+  private final Map<String, String> apiNameToToolName = new HashMap<>();
 
   /**
    * Creates a new OpenAI LLM client.
@@ -69,8 +73,8 @@ public class OpenAiLlmClient implements LlmClient {
         .setTrustAll(false)
         .setConnectTimeout(30_000)
         .setIdleTimeout(120));
-    this.toolsDef = buildToolsDef(tools);
-    this.systemPrompt = buildSystemPrompt();
+    this.toolsDef = buildToolsDef(tools, apiNameToToolName);
+    this.systemPrompt = buildSystemPrompt(tools);
     LOG.info("OpenAiLlmClient created: endpoint=" + this.endpoint
         + " model=" + model + " tools=" + toolsDef.size());
   }
@@ -178,6 +182,8 @@ public class OpenAiLlmClient implements LlmClient {
       JsonObject toolCall = toolCalls.getJsonObject(0);
       JsonObject function = toolCall.getJsonObject("function");
       String toolName = function.getString("name");
+      // Reverse-map the sanitized API name back to the real tool name (e.g. events_publish → events.publish)
+      toolName = apiNameToToolName.getOrDefault(toolName, toolName);
       String argsStr = function.getString("arguments", "{}");
 
       JsonObject args;
@@ -236,14 +242,17 @@ public class OpenAiLlmClient implements LlmClient {
   /**
    * Converts the agent's {@link Tool} list into the OpenAI
    * {@code tools} array format for function-calling.
+   * Tool names containing dots are sanitized to underscores (OpenAI requires ^[a-zA-Z0-9_-]+$).
    */
-  private static JsonArray buildToolsDef(Collection<Tool> tools) {
+  private static JsonArray buildToolsDef(Collection<Tool> tools, Map<String, String> reverseMap) {
     JsonArray arr = new JsonArray();
     for (Tool tool : tools) {
+      String apiName = tool.name().replace('.', '_');
+      reverseMap.put(apiName, tool.name());
       arr.add(new JsonObject()
           .put("type", "function")
           .put("function", new JsonObject()
-              .put("name", tool.name())
+              .put("name", apiName)
               .put("description", tool.description())
               .put("parameters", tool.schema())));
     }
@@ -252,47 +261,24 @@ public class OpenAiLlmClient implements LlmClient {
 
   // ── System prompt ─────────────────────────────────────────────────
 
-  private static String buildSystemPrompt() {
-    return """
+  private static String buildSystemPrompt(Collection<Tool> tools) {
+    StringBuilder sb = new StringBuilder();
+    sb.append("""
         You are an expert trade-failure resolution agent at a financial institution.
-        Your job is to investigate trade settlement failures and take appropriate actions
-        using the tools available to you.
+        Your job is to investigate trade settlement failures and take appropriate corrective \
+        actions using the tools available to you.
 
-        ## Your responsibilities
-        1. **Gather data** — Use `data.lookup` to retrieve reference data, counterparty
-           information, settlement details, and security master data for the trade.
-        2. **Classify** — Use `case.classify` to categorise the failure by type
-           (e.g. ReferenceData, Settlement, Compliance, Regulatory) and severity
-           (LOW, MEDIUM, HIGH, CRITICAL).
-        3. **Notify** — Use `comms.notify` to alert the appropriate team via the right
-           channel (email for LOW/MEDIUM, slack for HIGH, pagerduty for CRITICAL).
-        4. **Raise tickets** — Use `case.raiseTicket` to create a support ticket with
-           a clear summary and detailed description.
-        5. **Publish events** — Use `events.publish` to emit domain events so downstream
-           systems can react (e.g. TradeEscalated, ComplianceHold, CreditReview).
+        Always include the `tradeId` in tool arguments when available.
+        Keep reasoning focused on the trade data — do not speculate.
 
-        ## Investigation strategy
-        - **Step 1**: Always start with `data.lookup` to gather context about the trade.
-        - **Step 2**: Use `case.classify` to categorise and assess severity based on
-          the data gathered.
-        - **Step 3+**: Take appropriate action based on the classification — notify teams,
-          raise tickets, or publish events.
-        - You may call multiple tools across steps. Each tool call is one step.
-        - Conclude the investigation when you have taken the necessary corrective actions.
-
-        ## Severity guidelines
-        - **LOW**: Minor data issues (e.g. missing optional field) — email notification
-        - **MEDIUM**: Data mismatches requiring manual correction — email + ticket
-        - **HIGH**: Potential duplicates, regulatory deadlines, counterparty issues — Slack
-        - **CRITICAL**: Sanctions hits, credit events, cascading failures — PagerDuty + ticket
-
-        ## Important rules
-        - Always include the `tradeId` in tool arguments when available.
-        - Be specific in ticket summaries and notification subjects.
-        - For sanctions or compliance issues, ALWAYS publish a ComplianceHold event.
-        - For credit events, publish a CreditReview event.
-        - For regulatory deadline breaches, publish a RegulatoryBreach event.
-        - Keep your reasoning focused on the trade data — do not speculate.
-        """;
+        ## Tool instructions
+        """);
+    for (Tool tool : tools) {
+      String instr = tool.instructions();
+      if (instr != null && !instr.isBlank()) {
+        sb.append(instr).append("\n");
+      }
+    }
+    return sb.toString();
   }
 }
