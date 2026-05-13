@@ -21,7 +21,7 @@ import java.util.logging.Logger;
  * <h2>Why this matters</h2>
  * After classifying a failure, a real LLM decides who to notify:
  * <em>"This is a HIGH severity ReferenceData issue — I should page the
- * Reference Data team and CC the trading desk."</em> The notification
+ * Reference Data team and CC the Trade Operations."</em> The notification
  * channel and urgency depend on the classification from the prior step.
  *
  * <h2>Expected args</h2>

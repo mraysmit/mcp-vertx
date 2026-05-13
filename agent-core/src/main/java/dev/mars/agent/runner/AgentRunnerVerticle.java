@@ -162,7 +162,8 @@ public class AgentRunnerVerticle extends AbstractVerticle {
             .put("toolResult", outcome.getJsonObject("toolResult"))
             .put("at", System.currentTimeMillis());
         // Update the in-flight state so the next iteration's LLM call can
-        // see what tool was invoked and what it returned.
+        // see the full history of all tools called and their results.
+        ctx.state().put("trail", trail);
         ctx.state().put("last", entry);
         trail.add(entry);
         return memory.append(ctx.caseId(), entry).map(v -> outcome);

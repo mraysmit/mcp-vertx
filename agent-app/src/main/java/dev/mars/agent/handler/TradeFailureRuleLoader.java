@@ -872,7 +872,7 @@ public class TradeFailureRuleLoader implements StubRuleLoader {
               .put("args", new JsonObject()
                   .put("tradeId", tradeId)
                   .put("channel", "pagerduty")
-                  .put("team", "Settlement Operations + Trading Desk + Risk")
+                  .put("team", "Settlement Operations + Trade Operations + Risk")
                   .put("subject", "CRITICAL: $50M swap cascade — SSI fix needed — "
                       + "DV01 $42.5K/bp unhedged")
                   .put("body", "CASCADING SETTLEMENT FAILURE — IMMEDIATE ACTION REQUIRED\n\n"
@@ -881,7 +881,7 @@ public class TradeFailureRuleLoader implements StubRuleLoader {
                       + "at risk.\n\n"
                       + "FOR SETTLEMENT OPS: Update BIC from GBAGDEFF → GBAGDEFFXXX and "
                       + "resubmit " + tradeId + ". Estimated fix time: 5 minutes.\n\n"
-                      + "FOR TRADING DESK: Be aware that your duration hedge (T-911) is "
+                      + "FOR Trade Operations: Be aware that your duration hedge (T-911) is "
                       + "degrading. If settlement is delayed past 16:00 ET, consider "
                       + "temporary delta hedge.\n\n"
                       + "FOR RISK: Unhedged DV01 of $42,500/bp. Current rate vol suggests "
@@ -890,7 +890,7 @@ public class TradeFailureRuleLoader implements StubRuleLoader {
               .put("reasoning", "I'm sending ONE notification to THREE teams but with DIFFERENT "
                   + "actionable information for each:\n"
                   + "• Settlement Ops gets the specific fix instruction\n"
-                  + "• Trading Desk gets awareness of hedge degradation + contingency\n"
+                  + "• Trade Operations gets awareness of hedge degradation + contingency\n"
                   + "• Risk gets quantified exposure metrics (DV01, VaR)\n\n"
                   + "An LLM can tailor the same alert for different audiences because it "
                   + "understands what each team cares about. A rule-based system would send "

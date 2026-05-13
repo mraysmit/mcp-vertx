@@ -127,30 +127,32 @@ public class OpenAiLlmClient implements LlmClient {
     userMsg.append(event.encodePrettily());
     userMsg.append("\n```\n");
 
-    // Include prior steps from state so the model has conversation history
-    JsonObject lastStep = state.getJsonObject("last");
-    if (lastStep != null) {
-      userMsg.append("\n## Previous Step Result\n");
-      userMsg.append("Step ").append(lastStep.getInteger("step", 0)).append(":\n");
-      JsonObject prevCommand = lastStep.getJsonObject("command");
-      if (prevCommand != null) {
-        userMsg.append("- Action: called tool `").append(prevCommand.getString("tool", "?")).append("`\n");
-        userMsg.append("- Args: ").append(prevCommand.getJsonObject("args", new JsonObject()).encode()).append("\n");
-      }
-      JsonObject prevResult = lastStep.getJsonObject("toolResult");
-      if (prevResult != null) {
-        userMsg.append("- Tool Result:\n```json\n");
-        userMsg.append(prevResult.encodePrettily());
-        userMsg.append("\n```\n");
+    JsonArray priorSteps = state.getJsonArray("trail", new JsonArray());
+    if (!priorSteps.isEmpty()) {
+      userMsg.append("\n## Investigation so far\n");
+      for (int i = 0; i < priorSteps.size(); i++) {
+        JsonObject priorEntry = priorSteps.getJsonObject(i);
+        userMsg.append("\n### Step ").append(i + 1).append("\n");
+        JsonObject prevCommand = priorEntry.getJsonObject("command");
+        if (prevCommand != null) {
+          userMsg.append("- Tool: `").append(prevCommand.getString("tool", "?")).append("`\n");
+          userMsg.append("- Args: ").append(prevCommand.getJsonObject("args", new JsonObject()).encode()).append("\n");
+        }
+        JsonObject prevResult = priorEntry.getJsonObject("toolResult");
+        if (prevResult != null) {
+          userMsg.append("- Result:\n```json\n");
+          userMsg.append(prevResult.encodePrettily());
+          userMsg.append("\n```\n");
+        }
       }
     }
 
     int currentStep = state.getInteger("step", 0);
-    userMsg.append("\nThis is step ").append(currentStep).append(" of the investigation.");
-    if (lastStep == null) {
-      userMsg.append(" This is the first step — start by gathering data or classifying the failure.");
+    userMsg.append("\nThis is step ").append(currentStep + 1).append(" of the investigation.");
+    if (priorSteps.isEmpty()) {
+      userMsg.append(" Begin by gathering data on the trade failure.");
     } else {
-      userMsg.append(" Based on the previous step results, decide the next action or conclude the investigation.");
+      userMsg.append(" Based on the investigation so far, decide the next action.");
     }
 
     messages.add(new JsonObject()

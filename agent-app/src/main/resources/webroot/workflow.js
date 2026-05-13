@@ -433,9 +433,9 @@ async function runWorkflow() {
   eventSource.addEventListener('domain-event', (e) => {
     try {
       const evt = JSON.parse(e.data);
+      // Log to the event panel only — the flow diagram stage is activated
+      // during trail animation so stages illuminate in the correct order.
       logEvent('event', '📤 ' + (evt.type || 'Event'), JSON.stringify(evt, null, 2), 'event');
-      setStage('eventsink', 'done', evt.type || 'received');
-      setArrow('4', 'done');
     } catch (err) { /* ignore */ }
   });
   eventSource.addEventListener('stage', (e) => {
