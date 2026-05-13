@@ -38,7 +38,8 @@ import java.util.logging.Logger;
  *   "ticketId": "TICKET-...",
  *   "tradeId":  "T-200",
  *   "category": "ReferenceData",
- *   "summary":  "Counterparty LEI issue"
+ *   "summary":  "Counterparty LEI issue",
+ *   "detail":   "Failure reason: LEI not found in registry"  // omitted if blank
  * }
  * </pre>
  */
@@ -113,12 +114,16 @@ public class RaiseTicketTool implements Tool {
     LOG.info("Raising ticket: ticketId=" + ticketId + " tradeId=" + tradeId
         + " category=" + category + " caseId=" + ctx.caseId());
 
+    String detail = args.getString("detail", "");
     JsonObject result = new JsonObject()
       .put("status", "created")
       .put("ticketId", ticketId)
       .put("tradeId", tradeId)
       .put("category", category)
       .put("summary", args.getString("summary"));
+    if (detail != null && !detail.isEmpty()) {
+      result.put("detail", detail);
+    }
 
     JsonObject event = new JsonObject()
       .put("type", "TicketCreated")

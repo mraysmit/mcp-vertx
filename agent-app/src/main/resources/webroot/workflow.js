@@ -612,45 +612,60 @@ function showSummary(path, result) {
 }
 
 // ── Results Card ─────────────────────────────────────────────
-function summariseToolResult(tool, toolResult) {
-  if (!toolResult) return '';
-  if (tool.startsWith('data.') || tool.startsWith('data_')) {
-    const cpty       = toolResult.data?.counterparty?.name;
-    const isin       = toolResult.data?.security?.isin;
-    const settlSt    = toolResult.data?.settlement?.status;
-    const related    = toolResult.data?.relatedTrades?.length;
-    const parts = [];
-    if (cpty)      parts.push(cpty);
-    if (isin)      parts.push(isin);
-    if (settlSt)   parts.push('settlement: ' + settlSt);
-    if (related)   parts.push(related + ' related trade' + (related > 1 ? 's' : ''));
-    return parts.join(' · ') || 'Trade data retrieved';
+// ── Generic tool-result detail extractor ─────────────────────────
+// Works for any tool — no hardcoded tool names.
+// Keys in SKIP are never shown (internal IDs / metadata).
+// Keys in UNWRAP are descended into without adding their name as a prefix
+// (so "data.counterparty" becomes just "counterparty", "event.type" → "type").
+function buildToolDetails(toolResult) {
+  const SKIP   = new Set(['correlationId', 'caseId', 'tradeId', 'status']);
+  const UNWRAP = new Set(['data', 'event']);
+  const trunc  = (s, n) => { const t = String(s); return t.length > n ? t.slice(0, n - 1) + '\u2026' : t; };
+
+  // Compact "k: v · k: v" string from an object's primitive fields
+  function primLine(obj, max) {
+    return Object.entries(obj)
+      .filter(([, v]) => v !== null && v !== undefined && typeof v !== 'object')
+      .slice(0, max)
+      .map(([k, v]) => k + ': ' + trunc(String(v), 70))
+      .join('  \u00b7  ');
   }
-  if (tool.startsWith('case.cl') || tool.startsWith('case_cl')) {
-    const cat = toolResult.category;
-    const sev = toolResult.severity;
-    if (cat && sev) return cat + ' / ' + sev;
-    return toolResult.status || 'Classified';
+
+  const lines = [];
+
+  function walk(obj, prefix, depth) {
+    if (!obj || typeof obj !== 'object' || depth > 2) return;
+    for (const [k, v] of Object.entries(obj)) {
+      if (SKIP.has(k) || v === null || v === undefined) continue;
+      const label = prefix ? prefix + '.' + k : k;
+
+      if (Array.isArray(v)) {
+        if (!v.length) continue;
+        const first = v[0];
+        const compact = (typeof first === 'object' && first)
+          ? primLine(first, 5)
+          : v.slice(0, 5).map(String).join(', ');
+        if (compact) lines.push(label + ' [' + v.length + ']: ' + trunc(compact, 200));
+
+      } else if (typeof v === 'object') {
+        // Unwrap transparent container keys (data, event) at depth 0
+        if (UNWRAP.has(k) && depth === 0) {
+          walk(v, '', depth + 1);
+        } else {
+          const pl = primLine(v, 7);
+          if (pl) lines.push(label + ': ' + trunc(pl, 200));
+          // One more level of recursion for nested objects
+          if (depth < 1) walk(v, label, depth + 1);
+        }
+
+      } else {
+        lines.push(label + ': ' + trunc(String(v), 200));
+      }
+    }
   }
-  if (tool.startsWith('case.ra') || tool.startsWith('case_ra')) {
-    const id      = toolResult.ticketId;
-    const summary = toolResult.summary;
-    if (id && summary) return id + ': ' + (summary.length > 55 ? summary.slice(0, 55) + '\u2026' : summary);
-    if (summary)       return summary.length > 65 ? summary.slice(0, 65) + '\u2026' : summary;
-    return 'Ticket ' + (id || 'created');
-  }
-  if (tool.startsWith('comms.') || tool.startsWith('comms_')) {
-    const ch   = toolResult.channel;
-    const team = toolResult.team;
-    const id   = toolResult.notificationId;
-    if (ch && team) return ch + ' \u2192 ' + team + (id ? ' (' + id + ')' : '');
-    return 'Notification sent';
-  }
-  if (tool.startsWith('events.') || tool.startsWith('events_')) {
-    const type = toolResult.event?.type || toolResult.type;
-    return type ? 'Published: ' + type : 'Event published';
-  }
-  return toolResult.status || 'Done';
+
+  walk(toolResult, '', 0);
+  return lines.slice(0, 14);
 }
 
 function showResultsCard(path, result, tradeId) {
@@ -673,17 +688,22 @@ function showResultsCard(path, result, tradeId) {
       const tool       = cmd.tool || 'unknown';
       const reasoning  = cmd.reasoning || '';
       const toolResult = entry.toolResult || {};
-      const summary    = summariseToolResult(tool, toolResult);
+
+      const details    = buildToolDetails(toolResult);
+      const detailHtml = details
+        .map(d => '<div class="result-step-detail">' + escapeHtml(d) + '</div>')
+        .join('');
+
       stepsHtml +=
         '<div class="result-step">' +
           '<span class="result-step-num">' + (i + 1) + '</span>' +
           '<span class="result-step-icon">' + toolIcon(tool) + '</span>' +
           '<div class="result-step-body">' +
             '<div class="result-step-tool">' + escapeHtml(tool) + '</div>' +
-            (reasoning ? '<div class="result-step-reasoning">' + escapeHtml(reasoning) + '</div>' : '') +
-            (summary   ? '<div class="result-step-summary">' + escapeHtml(summary) + '</div>' : '') +
+            (reasoning  ? '<div class="result-step-reasoning">' + escapeHtml(reasoning) + '</div>' : '') +
+            detailHtml +
           '</div>' +
-          '<span class="result-step-ok">✓</span>' +
+          '<span class="result-step-ok">\u2713</span>' +
         '</div>';
     }
   } else if (path === 'deterministic') {

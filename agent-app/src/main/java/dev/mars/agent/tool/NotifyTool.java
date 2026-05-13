@@ -11,7 +11,7 @@ import java.util.UUID;
 import java.util.logging.Logger;
 
 /**
- * Agent tool that simulates sending a notification (email, Slack, PagerDuty)
+ * Agent tool that simulates sending a notification (email, Symphony, PagerDuty)
  * to the appropriate team based on the failure classification.
  *
  * <p><b>Tool name:</b> {@code comms.notify}<br>
@@ -28,7 +28,7 @@ import java.util.logging.Logger;
  * <pre>
  * {
  *   "tradeId":  "T-300",
- *   "channel":  "email",             // email | slack | pagerduty
+ *   "channel":  "email",             // email | Symphony | pagerduty
  *   "team":     "ReferenceData",
  *   "subject":  "HIGH: LEI missing for trade T-300",
  *   "body":     "Counterparty LEI is missing..."
@@ -42,7 +42,9 @@ import java.util.logging.Logger;
  *   "notificationId": "NOTIF-...",
  *   "channel":        "email",
  *   "team":           "ReferenceData",
- *   "tradeId":        "T-300"
+ *   "tradeId":        "T-300",
+ *   "subject":        "HIGH: LEI missing for trade T-300",
+ *   "body":           "Counterparty LEI is missing..."  // omitted if blank
  * }
  * </pre>
  */
@@ -69,7 +71,7 @@ public class NotifyTool implements Tool {
         ### comms.notify
         Alert the appropriate team after classification. Match channel to severity:
         - LOW / MEDIUM → `email`   — team: Operations or ReferenceData
-        - HIGH         → `slack`   — team: TradingDesk or SeniorOperations
+        - HIGH         → `Symphony`   — team: TradingDesk or SeniorOperations
         - CRITICAL     → `pagerduty` — team: RiskManagement or Compliance
         Subject format: `<SEVERITY>: <brief issue> for trade <tradeId>`
         Body should include: trade ID, failure reason, classification category, and next steps.
@@ -79,7 +81,7 @@ public class NotifyTool implements Tool {
 
   @Override
   public String description() {
-    return "Sends a notification to the appropriate team via email, Slack, or PagerDuty.";
+    return "Sends a notification to the appropriate team via email, Symphony, or PagerDuty.";
   }
 
   @Override
@@ -92,7 +94,7 @@ public class NotifyTool implements Tool {
                 .put("description", "The trade identifier"))
             .put("channel", new JsonObject()
                 .put("type", "string")
-                .put("enum", new JsonArray().add("email").add("slack").add("pagerduty"))
+                .put("enum", new JsonArray().add("email").add("Symphony").add("pagerduty"))
                 .put("description", "Notification channel"))
             .put("team", new JsonObject()
                 .put("type", "string")
@@ -112,6 +114,7 @@ public class NotifyTool implements Tool {
     String channel = args.getString("channel", "email");
     String team = args.getString("team", "Operations");
     String subject = args.getString("subject", "Trade failure notification");
+    String body = args.getString("body", "");
     String notifId = "NOTIF-" + UUID.randomUUID().toString().substring(0, 8);
 
     LOG.info("Sending notification: id=" + notifId + " channel=" + channel
@@ -122,7 +125,11 @@ public class NotifyTool implements Tool {
         .put("notificationId", notifId)
         .put("channel", channel)
         .put("team", team)
-        .put("tradeId", tradeId);
+        .put("tradeId", tradeId)
+        .put("subject", subject);
+    if (body != null && !body.isEmpty()) {
+      result.put("body", body);
+    }
 
     // Publish a NotificationSent event
     JsonObject event = new JsonObject()

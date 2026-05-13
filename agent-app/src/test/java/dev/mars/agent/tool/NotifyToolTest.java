@@ -51,7 +51,7 @@ class NotifyToolTest {
     var tool = new NotifyTool(vertx, "events.notify-test");
     var args = new JsonObject()
         .put("tradeId", "T-1")
-        .put("channel", "slack")
+        .put("channel", "Symphony")
         .put("team", "Operations")
         .put("subject", "Trade failure needs attention")
         .put("body", "Please review trade T-1");
@@ -59,7 +59,7 @@ class NotifyToolTest {
     tool.invoke(args, testCtx()).onSuccess(result -> {
       assertEquals("sent", result.getString("status"));
       assertTrue(result.getString("notificationId").startsWith("NOTIF-"));
-      assertEquals("slack", result.getString("channel"));
+      assertEquals("Symphony", result.getString("channel"));
       assertEquals("Operations", result.getString("team"));
       assertEquals("T-1", result.getString("tradeId"));
       ctx.completeNow();

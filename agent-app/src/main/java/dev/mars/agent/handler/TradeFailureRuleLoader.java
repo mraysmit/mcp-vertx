@@ -87,7 +87,7 @@ import java.util.logging.Logger;
  * <ol>
  *   <li><b>Lookup</b> — gather all trade context.</li>
  *   <li><b>Classify</b> — Operations / MEDIUM.</li>
- *   <li><b>Notify</b> — Slack to Operations team.</li>
+ *   <li><b>Notify</b> — Symphony to Operations team.</li>
  * </ol>
  *
  * <p>Each rule uses {@code stop: false} to continue the agent loop
@@ -262,7 +262,7 @@ public class TradeFailureRuleLoader implements StubRuleLoader {
                       + "material exposure."))
               .put("reasoning", "Given the material amount ($250K) and the approaching value "
                   + "date, I'm alerting both Reconciliation (to fix the break) and Risk "
-                  + "(to assess exposure) via PagerDuty. Standard Slack notification isn't "
+                  + "(to assess exposure) via PagerDuty. Standard Symphony notification isn't "
                   + "appropriate here — waiting for the next business day would increase "
                   + "the risk of a failed settlement.")
               .put("stop", true);
@@ -343,7 +343,7 @@ public class TradeFailureRuleLoader implements StubRuleLoader {
                   + "fills are genuine or if " + tradeId + " should be cancelled.")
               .put("stop", false);
 
-          // Step 3: PagerDuty alert (Slack too slow for CRITICAL)
+          // Step 3: PagerDuty alert (Symphony too slow for CRITICAL)
           default -> new JsonObject()
               .put("intent", "CALL_TOOL")
               .put("tool", "comms.notify")
@@ -360,7 +360,7 @@ public class TradeFailureRuleLoader implements StubRuleLoader {
                       + "Pattern: retry-after-timeout — verify with venue immediately.\n\n"
                       + "Ticket created. This is a P1 — requires immediate response."))
               .put("reasoning", "Duplicate execution is a CRITICAL risk scenario with ~$1.25M "
-                  + "of unintended AAPL exposure. Standard Slack notification is NOT "
+                  + "of unintended AAPL exposure. Standard Symphony notification is NOT "
                   + "sufficient — every minute of delay increases risk if the market moves "
                   + "against the duplicate position. Escalating to PagerDuty to ensure the "
                   + "Trade Operations on-call team is alerted immediately for manual "
@@ -469,7 +469,7 @@ public class TradeFailureRuleLoader implements StubRuleLoader {
                       + "Compliance ticket created. Immediate action required to contact "
                       + "DTCC and counterparty for matching resolution."))
               .put("reasoning", "Regulatory deadline breach is imminent — notifying Compliance "
-                  + "via PagerDuty, not Slack. The SEC T+1 mandate means this cannot wait "
+                  + "via PagerDuty, not Symphony. The SEC T+1 mandate means this cannot wait "
                   + "for the next standup or business day. I'm including specific actionable "
                   + "context: trade ID, current status (UNMATCHED), regulatory rule (15c6-1), "
                   + "and estimated time remaining (~3.5h) before the DTCC cutoff so the "
@@ -523,7 +523,7 @@ public class TradeFailureRuleLoader implements StubRuleLoader {
               .put("tool", "comms.notify")
               .put("args", new JsonObject()
                   .put("tradeId", tradeId)
-                  .put("channel", "slack")
+                  .put("channel", "Symphony")
                   .put("team", "Operations")
                   .put("subject", "MEDIUM: Investigation needed for trade " + tradeId)
                   .put("body", "Trade " + tradeId + " failed with reason: " + reason
@@ -531,7 +531,7 @@ public class TradeFailureRuleLoader implements StubRuleLoader {
                       + "Settlement status: UNMATCHED at DTCC.\n"
                       + "Please investigate and resolve."))
               .put("reasoning", "Classified as Operations/MEDIUM — notifying the "
-                  + "Operations team via Slack with full context")
+                  + "Operations team via Symphony with full context")
               .put("stop", true);
         };
       }
