@@ -5,6 +5,20 @@ fetch('/workflow/api/config')
     const port = cfg.pipelineUiPort || 8081;
     const link = document.getElementById('pipelineConfigLink');
     link.href = window.location.protocol + '//' + window.location.hostname + ':' + port + '/pipeline/';
+
+    // LLM indicator
+    const badge = document.getElementById('llmBadge');
+    if (badge) {
+      const type  = (cfg.llmType  || 'unknown').toLowerCase();
+      const model = cfg.llmModel || '';
+      const label = model ? type + ' / ' + model : type;
+      const isStub = type === 'stub';
+      badge.textContent = '🤖 ' + label;
+      badge.title = 'LLM: ' + label;
+      badge.style.background = isStub ? 'rgba(139,148,158,0.15)' : 'rgba(46,160,67,0.15)';
+      badge.style.color       = isStub ? '#8b949e'                 : '#3fb950';
+      badge.style.borderColor = isStub ? '#8b949e'                 : '#3fb950';
+    }
   })
   .catch(() => { /* leave href=#, link simply won't navigate */ });
 

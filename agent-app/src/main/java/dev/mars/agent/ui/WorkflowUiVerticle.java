@@ -43,6 +43,8 @@ public class WorkflowUiVerticle extends AbstractVerticle {
   private final String eventsAddress;
   private final long requestTimeoutMs;
   private final int pipelineUiPort;
+  private final String llmType;
+  private final String llmModel;
 
   /**
    * Active SSE connections keyed by tradeId. Multiple connections for the
@@ -58,12 +60,17 @@ public class WorkflowUiVerticle extends AbstractVerticle {
    * @param eventsAddress    event bus address to subscribe to for domain events (e.g. "events.out")
    * @param requestTimeoutMs timeout for the pipeline request/reply
    * @param pipelineUiPort   port the Pipeline Config UI is running on (e.g. 8081)
+   * @param llmType          LLM client type (e.g. "openai", "stub")
+   * @param llmModel         LLM model name (e.g. "gpt-4o"), may be null
    */
-  public WorkflowUiVerticle(String inboundAddress, String eventsAddress, long requestTimeoutMs, int pipelineUiPort) {
+  public WorkflowUiVerticle(String inboundAddress, String eventsAddress, long requestTimeoutMs, int pipelineUiPort,
+                             String llmType, String llmModel) {
     this.inboundAddress = inboundAddress;
     this.eventsAddress = eventsAddress;
     this.requestTimeoutMs = requestTimeoutMs;
     this.pipelineUiPort = pipelineUiPort;
+    this.llmType = llmType != null ? llmType : "unknown";
+    this.llmModel = llmModel != null ? llmModel : "";
   }
 
   @Override
@@ -78,7 +85,11 @@ public class WorkflowUiVerticle extends AbstractVerticle {
         ctx.response()
             .putHeader("content-type", "application/json")
             .putHeader("access-control-allow-origin", "*")
-            .end(new JsonObject().put("pipelineUiPort", pipelineUiPort).encode()));
+            .end(new JsonObject()
+                .put("pipelineUiPort", pipelineUiPort)
+                .put("llmType", llmType)
+                .put("llmModel", llmModel)
+                .encode()));
 
     // ── SSE endpoint for domain events ────────────────────────────
     router.get("/workflow/api/events").handler(ctx -> {

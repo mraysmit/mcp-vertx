@@ -197,7 +197,9 @@ public class MainVerticle extends AbstractVerticle {
         LOG.info("Deploying WorkflowUiVerticle on port " + childConfig.getInteger("workflow.port", 8082));
         return vertx.deployVerticle(
             new WorkflowUiVerticle(inbound, events, cfg.http().requestTimeoutMs(),
-                childConfig.getInteger("ui.port", 8081)), childOpts);
+                childConfig.getInteger("ui.port", 8081),
+                cfg.llm().type(),
+                cfg.llm().params().get("model")), childOpts);
       })
       .onSuccess(id -> {
         int httpPort      = childConfig.getInteger("http.port", 8080);
