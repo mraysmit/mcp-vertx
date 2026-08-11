@@ -87,4 +87,25 @@ class ToolRegistryTest {
     assertThrows(UnsupportedOperationException.class,
         () -> merged.put("c", stubTool("c")));
   }
+
+  @Test
+  void tool_context_defensively_copies_metadata() {
+    JsonObject source = new JsonObject().put("key", "original");
+    ToolContext context = new ToolContext("correlation", "resource", source);
+
+    source.put("key", "changed");
+    assertEquals("original", context.metadata().getString("key"));
+
+    JsonObject returned = context.metadata();
+    returned.put("key", "changed again");
+    assertEquals("original", context.metadata().getString("key"));
+  }
+
+  @Test
+  void tool_context_rejects_blank_identifiers() {
+    assertThrows(IllegalArgumentException.class,
+        () -> new ToolContext(" ", "resource", new JsonObject()));
+    assertThrows(IllegalArgumentException.class,
+        () -> new ToolContext("correlation", " ", new JsonObject()));
+  }
 }

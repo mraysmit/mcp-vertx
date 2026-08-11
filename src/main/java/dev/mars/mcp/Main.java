@@ -26,7 +26,19 @@ public final class Main {
         "mcp.resourceIdField", "MCP_RESOURCE_ID_FIELD", "resourceId");
     JsonObject config = new JsonObject()
         .put("mcp.port", integerSetting("mcp.port", "MCP_PORT", 3001))
-        .put("mcp.basePath", setting("mcp.basePath", "MCP_BASE_PATH", ""));
+        .put("mcp.host", setting("mcp.host", "MCP_HOST", "127.0.0.1"))
+        .put("mcp.basePath", setting("mcp.basePath", "MCP_BASE_PATH", ""))
+        .put("mcp.allowedOrigins", setting(
+            "mcp.allowedOrigins", "MCP_ALLOWED_ORIGINS", ""))
+        .put("mcp.authToken", setting("mcp.authToken", "MCP_AUTH_TOKEN", ""))
+        .put("mcp.maxRequestsPerMinute", integerSetting(
+            "mcp.maxRequestsPerMinute", "MCP_MAX_REQUESTS_PER_MINUTE", 120))
+        .put("mcp.maxBodyBytes", longSetting(
+            "mcp.maxBodyBytes", "MCP_MAX_BODY_BYTES", 1_048_576L))
+        .put("mcp.toolTimeoutMs", longSetting(
+            "mcp.toolTimeoutMs", "MCP_TOOL_TIMEOUT_MS", 30_000L))
+        .put("mcp.maxToolResultBytes", integerSetting(
+            "mcp.maxToolResultBytes", "MCP_MAX_TOOL_RESULT_BYTES", 1_048_576));
 
     Vertx vertx = Vertx.vertx();
     Runtime.getRuntime().addShutdownHook(
@@ -40,7 +52,7 @@ public final class Main {
       .onFailure(error -> {
         LOG.severe("Unable to start MCP server: " + error.getMessage());
         error.printStackTrace();
-        vertx.close();
+        vertx.close().onComplete(ignored -> System.exit(1));
       });
   }
 
@@ -62,6 +74,17 @@ public final class Main {
     } catch (NumberFormatException error) {
       throw new IllegalArgumentException(
           property + "/" + environment + " must be an integer: " + value,
+          error);
+    }
+  }
+
+  private static long longSetting(String property, String environment, long fallback) {
+    String value = setting(property, environment, Long.toString(fallback));
+    try {
+      return Long.parseLong(value);
+    } catch (NumberFormatException error) {
+      throw new IllegalArgumentException(
+          property + "/" + environment + " must be a long integer: " + value,
           error);
     }
   }

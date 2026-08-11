@@ -13,4 +13,20 @@ import io.vertx.core.json.JsonObject;
 public record ToolContext(
     String correlationId,
     String resourceId,
-    JsonObject metadata) {}
+    JsonObject metadata) {
+
+  public ToolContext {
+    if (correlationId == null || correlationId.isBlank()) {
+      throw new IllegalArgumentException("correlationId must not be blank");
+    }
+    if (resourceId == null || resourceId.isBlank()) {
+      throw new IllegalArgumentException("resourceId must not be blank");
+    }
+    metadata = metadata == null ? new JsonObject() : metadata.copy();
+  }
+
+  @Override
+  public JsonObject metadata() {
+    return metadata.copy();
+  }
+}
