@@ -44,10 +44,3 @@ META-INF/
 .env
 *.env
 
-# Node (pptxgenjs / scripts)
-node_modules/
-package.json
-package-lock.json
-
-# Generated presentation output
-*.pptx
