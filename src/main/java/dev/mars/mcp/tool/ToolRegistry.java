@@ -3,6 +3,7 @@ package dev.mars.mcp.tool;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.logging.Logger;
 import java.util.stream.Collectors;
 
 /**
@@ -21,6 +22,8 @@ import java.util.stream.Collectors;
  * @see Tool
  */
 public final class ToolRegistry {
+  private static final Logger LOG = Logger.getLogger(ToolRegistry.class.getName());
+
   private ToolRegistry() {}
 
   /**
@@ -31,8 +34,12 @@ public final class ToolRegistry {
    * @throws IllegalStateException if two tools share the same name
    */
   public static Map<String, Tool> of(Tool... tools) {
-    return List.of(tools).stream()
+    LOG.fine(() -> "Building MCP tool registry from " + tools.length + " provider(s)");
+    Map<String, Tool> registry = List.of(tools).stream()
       .collect(Collectors.toUnmodifiableMap(Tool::name, t -> t));
+    LOG.info(() -> "MCP tool registry created: tools=" + registry.size());
+    LOG.fine(() -> "Registered MCP tools: " + registry.keySet().stream().sorted().toList());
+    return registry;
   }
 
   /**
@@ -46,10 +53,18 @@ public final class ToolRegistry {
    * @return an unmodifiable merged map
    */
   public static Map<String, Tool> withAdditional(Map<String, Tool> base, Tool... extras) {
+    LOG.fine(() -> "Extending MCP tool registry: base=" + base.size()
+        + " extras=" + extras.length);
     Map<String, Tool> merged = new HashMap<>(base);
     for (Tool t : extras) {
+      if (merged.containsKey(t.name())) {
+        LOG.info(() -> "Replacing MCP tool registration: tool=" + t.name());
+      }
       merged.put(t.name(), t);
     }
-    return Map.copyOf(merged);
+    Map<String, Tool> registry = Map.copyOf(merged);
+    LOG.info(() -> "MCP tool registry extended: tools=" + registry.size());
+    LOG.fine(() -> "Registered MCP tools: " + registry.keySet().stream().sorted().toList());
+    return registry;
   }
 }

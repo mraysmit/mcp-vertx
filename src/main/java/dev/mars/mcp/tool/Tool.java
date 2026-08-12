@@ -37,5 +37,30 @@ public interface Tool {
    * @param context   server-generated invocation metadata
    * @return the asynchronous tool result
    */
-  Future<JsonObject> invoke(JsonObject arguments, ToolContext context);
+  default Future<JsonObject> invoke(JsonObject arguments, ToolContext context) {
+    return Future.failedFuture(
+        "Tool must override invoke(...) or invokeManaged(...): " + name());
+  }
+
+  /**
+   * Invoke the tool through the managed result API.
+   *
+   * <p>The default adapter preserves source compatibility with tools that
+   * implement {@link #invoke(JsonObject, ToolContext)}. Advanced tools can
+   * override this method to return native MCP content, input requests, and a
+   * cancellation callback.
+   */
+  default ToolInvocation invokeManaged(JsonObject arguments, ToolContext context) {
+    Future<ToolResult> result = invoke(arguments, context)
+        .map(CompleteToolResult::structured);
+    return ToolInvocation.of(result);
+  }
+
+  /** Complete metadata advertised by {@code tools/list}. */
+  default ToolDefinition definition() {
+    return ToolDefinition.builder(name())
+        .description(description())
+        .inputSchema(schema())
+        .build();
+  }
 }

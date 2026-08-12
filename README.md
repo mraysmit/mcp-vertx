@@ -7,10 +7,12 @@ Java 25 with Vert.x 5.
 
 - MCP protocol revision `2026-07-28`
 - Stateless Streamable HTTP at `POST /mcp`
-- Required `server/discover`, `ping`, `tools/list`, and `tools/call` methods
+- `server/discover`, `tools/list`, and `tools/call` methods
 - Per-request MCP version, method, client identity, and capability validation
 - JSON Schema 2020-12 and draft-07 tool-input validation
-- Structured and text tool results with MCP `isError` handling
+- Native text, image, audio, resource-link, and structured tool results
+- Multi-round-trip `input_required` results with client-capability checks
+- Cooperative cancellation, execution deadlines, and bounded concurrency
 
 The deprecated initialization/session protocol and legacy HTTP+SSE endpoints
 have been removed. `GET /mcp` and `DELETE /mcp` return `405 Method Not Allowed`.
@@ -26,13 +28,34 @@ java -jar target/mcp-vertx-0.3.0-SNAPSHOT.jar
 The server binds to `127.0.0.1:3001` by default. With no external tool
 providers on the classpath, `tools/list` returns an empty list.
 
+## Logging
+
+The server uses `java.util.logging`. INFO records lifecycle, request outcomes,
+tool execution milestones, limits, and safe failure classifications. FINE is
+the DEBUG level and adds routing, validation, concurrency, response-size, and
+timing detail. Logs deliberately omit authorization values, request arguments,
+mirrored parameter values, and tool-result bodies.
+
+The JVM's default logging configuration displays INFO. Enable project DEBUG
+logging with the supplied configuration:
+
+```powershell
+java -Djava.util.logging.config.file=config/logging-debug.properties `
+  -jar target/mcp-vertx-0.3.0-SNAPSHOT.jar
+```
+
+Maven tests automatically use DEBUG logging. A shared JUnit extension records
+each test's start, outcome, duration, unique ID, tags, and execution thread;
+integration helpers also record deployments and HTTP status flow.
+
 ## Security defaults
 
 - Loopback-only binding
 - Every supplied `Origin` is rejected unless explicitly allow-listed
 - A bearer token is mandatory when binding to a non-loopback interface
 - Per-client request rate limiting
-- Bounded request bodies, tool execution time, and tool-result size
+- Bounded request bodies, schema validation, tool concurrency, execution time,
+  cancellation grace, and final serialized response size
 
 To expose the server outside the local machine:
 
@@ -58,10 +81,21 @@ when the endpoint crosses a trusted local network boundary.
 | `mcp.maxRequestsPerMinute` | `MCP_MAX_REQUESTS_PER_MINUTE` | `120` |
 | `mcp.maxBodyBytes` | `MCP_MAX_BODY_BYTES` | `1048576` |
 | `mcp.toolTimeoutMs` | `MCP_TOOL_TIMEOUT_MS` | `30000` |
-| `mcp.maxToolResultBytes` | `MCP_MAX_TOOL_RESULT_BYTES` | `1048576` |
+| `mcp.validationTimeoutMs` | `MCP_VALIDATION_TIMEOUT_MS` | `2000` |
+| `mcp.cancellationGraceMs` | `MCP_CANCELLATION_GRACE_MS` | `250` |
+| `mcp.maxConcurrentToolCalls` | `MCP_MAX_CONCURRENT_TOOL_CALLS` | `64` |
+| `mcp.maxConcurrentCallsPerTool` | `MCP_MAX_CONCURRENT_CALLS_PER_TOOL` | `16` |
+| `mcp.maxConcurrentValidations` | `MCP_MAX_CONCURRENT_VALIDATIONS` | `32` |
+| `mcp.maxResponseBytes` | `MCP_MAX_RESPONSE_BYTES` | `1048576` |
+| `mcp.healthEnabled` | `MCP_HEALTH_ENABLED` | `false` |
+| `mcp.trustedProxies` | `MCP_TRUSTED_PROXIES` | empty |
+| `mcp.clientAddressHeader` | `MCP_CLIENT_ADDRESS_HEADER` | `X-Forwarded-For` |
 
 `mcp.allowedOrigins` is a comma-separated list of complete origins such as
 `https://client.example,https://admin.example`. Wildcard origins are rejected.
+When health endpoints are enabled, authenticated `GET /health/live` and
+`GET /health/ready` endpoints are registered. Forwarded client addresses are
+used only when the direct peer appears in the explicit trusted-proxy list.
 
 ## Register tools
 
@@ -116,5 +150,25 @@ var tools = ToolRegistry.of(new EchoTool());
 vertx.deployVerticle(new McpServerVerticle(tools));
 ```
 
+Existing tools can keep returning `Future<JsonObject>`. Providers that need
+rich content, output schemas, multi-round-trip input, or cancellation can
+override `definition()` and `invokeManaged()` and return `ToolResult` values.
+Throw `ToolExecutionException` only for messages deliberately safe to disclose;
+all other provider failures are logged with a correlation ID and returned as a
+generic tool error.
+
+Input schemas may place `x-mcp-header` on statically reachable primitive
+properties (`string`, `integer`, or `boolean`). The server then requires the
+matching `Mcp-Param-<name>` request header and compares it to the JSON argument.
+
 See `mcp-vertx.http` for complete `server/discover`, `tools/list`, and
 `tools/call` request examples with the required modern MCP headers and metadata.
+
+## Development
+
+See [Coding principles](docs/coding-principles.md) for the project's Vert.x 5,
+MCP error-handling, testing, and extension-provider guidelines.
+
+Run `mvn verify` to execute the tests, generate the JaCoCo report under
+`target/site/jacoco`, and enforce the project coverage floor of 85% lines and
+70% branches.

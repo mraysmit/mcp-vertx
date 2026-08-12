@@ -9,6 +9,7 @@ import io.vertx.core.json.JsonObject;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.ServiceLoader;
+import java.util.logging.Level;
 import java.util.logging.Logger;
 
 /** Standalone entry point for the Vert.x MCP server. */
@@ -19,12 +20,58 @@ public final class Main {
   private Main() {}
 
   public static void main(String[] args) {
+    LOG.info("Starting mcp-vertx standalone server");
     List<Tool> discoveredTools = new ArrayList<>();
     ServiceLoader.load(Tool.class).forEach(discoveredTools::add);
+    LOG.info(() -> "Discovered " + discoveredTools.size() + " MCP tool provider(s)");
 
-    String resourceIdField = setting(
-        "mcp.resourceIdField", "MCP_RESOURCE_ID_FIELD", "resourceId");
-    JsonObject config = new JsonObject()
+    String resourceIdField = resourceIdField();
+    JsonObject config = configuration();
+    LOG.fine(() -> "Resolved MCP configuration: host=" + config.getString("mcp.host")
+        + " port=" + config.getInteger("mcp.port")
+        + " basePath=\"" + config.getString("mcp.basePath") + "\""
+        + " authConfigured=" + !config.getString("mcp.authToken").isBlank()
+        + " healthEnabled=" + config.getBoolean("mcp.healthEnabled")
+        + " resourceIdField=" + resourceIdField);
+
+    Vertx vertx = Vertx.vertx();
+    LOG.fine("Created Vert.x runtime and installing JVM shutdown hook");
+    Runtime.getRuntime().addShutdownHook(
+        new Thread(() -> {
+          LOG.info("JVM shutdown requested; closing Vert.x runtime");
+          try {
+            vertx.close().toCompletionStage().toCompletableFuture().join();
+            LOG.info("Vert.x runtime closed");
+          } catch (RuntimeException error) {
+            LOG.log(Level.WARNING, "Vert.x shutdown failed", error);
+          }
+        }, "mcp-vertx-shutdown"));
+
+    var tools = ToolRegistry.of(discoveredTools.toArray(Tool[]::new));
+    LOG.fine(() -> "Validated MCP tool registrations: "
+        + tools.keySet().stream().sorted().toList());
+    LOG.fine(() -> "Deploying MCP server verticle with " + tools.size() + " registered tool(s)");
+    vertx.deployVerticle(
+        new McpServerVerticle(tools, resourceIdField),
+        new DeploymentOptions().setConfig(config))
+      .onSuccess(id -> LOG.info("MCP server deployed: deploymentId=" + id
+          + " tools=" + tools.size()))
+      .onFailure(error -> {
+        LOG.log(Level.SEVERE, "Unable to start MCP server", error);
+        vertx.close()
+            .onSuccess(ignored -> LOG.fine("Vert.x runtime closed after startup failure"))
+            .onFailure(closeError -> LOG.log(Level.WARNING,
+                "Vert.x close failed after startup failure", closeError))
+            .onComplete(ignored -> System.exit(1));
+      });
+  }
+
+  static String resourceIdField() {
+    return setting("mcp.resourceIdField", "MCP_RESOURCE_ID_FIELD", "resourceId");
+  }
+
+  static JsonObject configuration() {
+    return new JsonObject()
         .put("mcp.port", integerSetting("mcp.port", "MCP_PORT", 3001))
         .put("mcp.host", setting("mcp.host", "MCP_HOST", "127.0.0.1"))
         .put("mcp.basePath", setting("mcp.basePath", "MCP_BASE_PATH", ""))
@@ -37,26 +84,27 @@ public final class Main {
             "mcp.maxBodyBytes", "MCP_MAX_BODY_BYTES", 1_048_576L))
         .put("mcp.toolTimeoutMs", longSetting(
             "mcp.toolTimeoutMs", "MCP_TOOL_TIMEOUT_MS", 30_000L))
-        .put("mcp.maxToolResultBytes", integerSetting(
-            "mcp.maxToolResultBytes", "MCP_MAX_TOOL_RESULT_BYTES", 1_048_576));
-
-    Vertx vertx = Vertx.vertx();
-    Runtime.getRuntime().addShutdownHook(
-        new Thread(() -> vertx.close(), "mcp-vertx-shutdown"));
-
-    var tools = ToolRegistry.of(discoveredTools.toArray(Tool[]::new));
-    vertx.deployVerticle(
-        new McpServerVerticle(tools, resourceIdField),
-        new DeploymentOptions().setConfig(config))
-      .onSuccess(id -> LOG.info("MCP server deployed with " + tools.size() + " tool(s)"))
-      .onFailure(error -> {
-        LOG.severe("Unable to start MCP server: " + error.getMessage());
-        error.printStackTrace();
-        vertx.close().onComplete(ignored -> System.exit(1));
-      });
+        .put("mcp.validationTimeoutMs", longSetting(
+            "mcp.validationTimeoutMs", "MCP_VALIDATION_TIMEOUT_MS", 2_000L))
+        .put("mcp.cancellationGraceMs", longSetting(
+            "mcp.cancellationGraceMs", "MCP_CANCELLATION_GRACE_MS", 250L))
+        .put("mcp.maxConcurrentToolCalls", integerSetting(
+            "mcp.maxConcurrentToolCalls", "MCP_MAX_CONCURRENT_TOOL_CALLS", 64))
+        .put("mcp.maxConcurrentCallsPerTool", integerSetting(
+            "mcp.maxConcurrentCallsPerTool", "MCP_MAX_CONCURRENT_CALLS_PER_TOOL", 16))
+        .put("mcp.maxConcurrentValidations", integerSetting(
+            "mcp.maxConcurrentValidations", "MCP_MAX_CONCURRENT_VALIDATIONS", 32))
+        .put("mcp.maxResponseBytes", longSetting(
+            "mcp.maxResponseBytes", "MCP_MAX_RESPONSE_BYTES", 1_048_576L))
+        .put("mcp.healthEnabled", booleanSetting(
+            "mcp.healthEnabled", "MCP_HEALTH_ENABLED", false))
+        .put("mcp.trustedProxies", setting(
+            "mcp.trustedProxies", "MCP_TRUSTED_PROXIES", ""))
+        .put("mcp.clientAddressHeader", setting(
+            "mcp.clientAddressHeader", "MCP_CLIENT_ADDRESS_HEADER", "X-Forwarded-For"));
   }
 
-  private static String setting(String property, String environment, String fallback) {
+  static String setting(String property, String environment, String fallback) {
     String propertyValue = System.getProperty(property);
     if (propertyValue != null && !propertyValue.isBlank()) {
       return propertyValue;
@@ -67,7 +115,7 @@ public final class Main {
         : environmentValue;
   }
 
-  private static int integerSetting(String property, String environment, int fallback) {
+  static int integerSetting(String property, String environment, int fallback) {
     String value = setting(property, environment, Integer.toString(fallback));
     try {
       return Integer.parseInt(value);
@@ -78,7 +126,7 @@ public final class Main {
     }
   }
 
-  private static long longSetting(String property, String environment, long fallback) {
+  static long longSetting(String property, String environment, long fallback) {
     String value = setting(property, environment, Long.toString(fallback));
     try {
       return Long.parseLong(value);
@@ -87,5 +135,14 @@ public final class Main {
           property + "/" + environment + " must be a long integer: " + value,
           error);
     }
+  }
+
+  static boolean booleanSetting(String property, String environment, boolean fallback) {
+    String value = setting(property, environment, Boolean.toString(fallback));
+    if ("true".equalsIgnoreCase(value) || "false".equalsIgnoreCase(value)) {
+      return Boolean.parseBoolean(value);
+    }
+    throw new IllegalArgumentException(
+        property + "/" + environment + " must be true or false: " + value);
   }
 }

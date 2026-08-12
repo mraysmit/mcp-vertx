@@ -1,13 +1,16 @@
 package dev.mars.mcp.tool;
 
+import dev.mars.mcp.testing.TestLoggingExtension;
 import io.vertx.core.Future;
 import io.vertx.core.json.JsonObject;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+@ExtendWith(TestLoggingExtension.class)
 class ToolRegistryTest {
 
   private Tool stubTool(String name) {
