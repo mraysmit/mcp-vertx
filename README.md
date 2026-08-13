@@ -30,19 +30,27 @@ providers on the classpath, `tools/list` returns an empty list.
 
 ## Logging
 
-The server uses `java.util.logging`. INFO records lifecycle, request outcomes,
-tool execution milestones, limits, and safe failure classifications. FINE is
-the DEBUG level and adds routing, validation, concurrency, response-size, and
-timing detail. Logs deliberately omit authorization values, request arguments,
-mirrored parameter values, and tool-result bodies.
+The server uses the standard Vert.x 5 logging integration: application code
+logs through SLF4J 2, Logback is the runtime backend, and Vert.x routes its
+internal logs to the same SLF4J backend. INFO records lifecycle, HTTP access
+outcomes, tool execution milestones, limits, and safe failure classifications.
+DEBUG adds routing, validation, concurrency, response-size, and timing detail.
+Logs deliberately omit authorization values, request arguments, mirrored
+parameter values, query strings, and tool-result bodies.
 
-The JVM's default logging configuration displays INFO. Enable project DEBUG
-logging with the supplied configuration:
+The bundled `src/main/resources/logback.xml` is packaged into the executable
+JAR and discovered automatically by Logback. No JVM logging property or
+command-line configuration is required:
 
 ```powershell
-java -Djava.util.logging.config.file=config/logging-debug.properties `
-  -jar target/mcp-vertx-0.3.0-SNAPSHOT.jar
+java -jar target/mcp-vertx-0.3.0-SNAPSHOT.jar
 ```
+
+The defaults enable DEBUG for the application and Vert.x, INFO HTTP access
+records, and INFO for Netty without enabling payload-level wire dumps. Levels
+can optionally be tuned through `MCP_LOG_LEVEL`, `MCP_HTTP_LOG_LEVEL`,
+`VERTX_LOG_LEVEL`, `VERTX_WEB_LOG_LEVEL`, `NETTY_LOG_LEVEL`, and
+`ROOT_LOG_LEVEL` environment variables.
 
 Maven tests automatically use DEBUG logging. A shared JUnit extension records
 each test's start, outcome, duration, unique ID, tags, and execution thread;

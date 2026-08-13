@@ -16,14 +16,15 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
-import java.util.logging.Logger;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /** Compiles and applies the JSON Schemas advertised by MCP tools. */
 public final class ToolSchemaValidator {
 
-  private static final Logger LOG = Logger.getLogger(ToolSchemaValidator.class.getName());
+  private static final Logger LOG = LoggerFactory.getLogger(ToolSchemaValidator.class);
 
   private static final Set<String> DRAFT_2020_12 = Set.of(
       "https://json-schema.org/draft/2020-12/schema",
@@ -47,9 +48,9 @@ public final class ToolSchemaValidator {
   public ToolSchemaValidator(Map<String, JsonObject> toolSchemas,
                              Map<String, JsonObject> toolOutputSchemas,
                              SchemaLimits limits) {
-    LOG.info(() -> "Compiling MCP tool schemas: inputs=" + toolSchemas.size()
+    LOG.atInfo().log(() -> "Compiling MCP tool schemas: inputs=" + toolSchemas.size()
         + " outputs=" + toolOutputSchemas.size());
-    LOG.fine(() -> "Schema safety limits: maxBytes=" + limits.maxBytes()
+    LOG.atDebug().log(() -> "Schema safety limits: maxBytes=" + limits.maxBytes()
         + " maxDepth=" + limits.maxDepth() + " maxNodes=" + limits.maxNodes()
         + " maxCompositionBranches=" + limits.maxCompositionBranches()
         + " maxPropertiesPerObject=" + limits.maxPropertiesPerObject()
@@ -71,7 +72,7 @@ public final class ToolSchemaValidator {
     inputSchemas = Map.copyOf(compiledInputs);
     outputSchemas = Map.copyOf(compiledOutputs);
     headerBindings = Map.copyOf(bindings);
-    LOG.info(() -> "MCP tool schemas compiled: inputs=" + inputSchemas.size()
+    LOG.atInfo().log(() -> "MCP tool schemas compiled: inputs=" + inputSchemas.size()
         + " outputs=" + outputSchemas.size()
         + " mirroredHeaders=" + headerBindings.values().stream()
             .mapToInt(List::size).sum());
@@ -79,7 +80,7 @@ public final class ToolSchemaValidator {
 
   /** Returns an empty string when the arguments are valid. */
   public String validate(String toolName, JsonObject arguments) {
-    LOG.fine(() -> "Validating MCP tool input: tool=" + toolName);
+    LOG.atDebug().log(() -> "Validating MCP tool input: tool=" + toolName);
     String result = validateWith(requireSchema(inputSchemas, toolName, "input"), arguments);
     logValidationResult(toolName, "input", result);
     return result;
@@ -89,11 +90,11 @@ public final class ToolSchemaValidator {
   public String validateOutput(String toolName, JsonObject output) {
     Schema schema = outputSchemas.get(toolName);
     if (schema == null) {
-      LOG.fine(() -> "Skipping MCP tool output validation; no schema advertised: tool="
+      LOG.atDebug().log(() -> "Skipping MCP tool output validation; no schema advertised: tool="
           + toolName);
       return "";
     }
-    LOG.fine(() -> "Validating MCP tool output: tool=" + toolName);
+    LOG.atDebug().log(() -> "Validating MCP tool output: tool=" + toolName);
     String result = validateWith(schema, output);
     logValidationResult(toolName, "output", result);
     return result;
@@ -147,7 +148,7 @@ public final class ToolSchemaValidator {
     Map<String, HeaderBinding> headers = new LinkedHashMap<>();
     walk(toolName, schema.getMap(), 0, List.of(), false, collectHeaders,
         version, limits, counters, headers);
-    LOG.fine(() -> "Analyzed MCP tool schema: tool=" + toolName
+    LOG.atDebug().log(() -> "Analyzed MCP tool schema: tool=" + toolName
         + " kind=" + (collectHeaders ? "input" : "output")
         + " dialect=" + version + " bytes=" + bytes + " nodes=" + counters.nodes
         + " compositionBranches=" + counters.compositionBranches
@@ -157,12 +158,12 @@ public final class ToolSchemaValidator {
 
   private void logValidationResult(String toolName, String kind, String result) {
     if (result.isEmpty()) {
-      LOG.fine(() -> "MCP tool schema validation passed: tool=" + toolName
+      LOG.atDebug().log(() -> "MCP tool schema validation passed: tool=" + toolName
           + " kind=" + kind);
     } else {
-      LOG.info(() -> "MCP tool schema validation rejected value: tool=" + toolName
+      LOG.atInfo().log(() -> "MCP tool schema validation rejected value: tool=" + toolName
           + " kind=" + kind + " violations=" + result.split("; ").length);
-      LOG.fine(() -> "MCP tool schema violations: tool=" + toolName
+      LOG.atDebug().log(() -> "MCP tool schema violations: tool=" + toolName
           + " kind=" + kind + " detailChars=" + result.length());
     }
   }
