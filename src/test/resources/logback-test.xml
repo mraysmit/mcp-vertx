@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+  <property name="LOG_PATTERN"
+            value="%date{HH:mm:ss.SSS} %-5level [%thread] %logger{48} - %msg%n%ex"/>
+
+  <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+    <encoder>
+      <pattern>${LOG_PATTERN}</pattern>
+    </encoder>
+  </appender>
+
+  <logger name="dev.mars.mcp" level="DEBUG"/>
+  <logger name="io.vertx.ext.web.handler.LoggerHandler" level="INFO"/>
+  <logger name="io.vertx" level="INFO"/>
+  <logger name="io.netty" level="WARN"/>
+
+  <root level="WARN">
+    <appender-ref ref="CONSOLE"/>
+  </root>
+</configuration>

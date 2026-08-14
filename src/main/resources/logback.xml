@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+  <property name="LOG_PATTERN"
+            value="%date{yyyy-MM-dd'T'HH:mm:ss.SSSXXX} %-5level [%thread] %logger{48} - %msg%n%ex"/>
+
+  <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+    <encoder>
+      <pattern>${LOG_PATTERN}</pattern>
+    </encoder>
+  </appender>
+
+  <logger name="dev.mars.mcp" level="${MCP_LOG_LEVEL:-DEBUG}"/>
+  <logger name="io.vertx.core" level="${VERTX_LOG_LEVEL:-DEBUG}"/>
+  <logger name="io.vertx.ext.web" level="${VERTX_WEB_LOG_LEVEL:-DEBUG}"/>
+  <logger name="io.vertx.ext.web.handler.LoggerHandler"
+          level="${MCP_HTTP_LOG_LEVEL:-INFO}"/>
+  <logger name="io.netty" level="${NETTY_LOG_LEVEL:-INFO}"/>
+
+  <root level="${ROOT_LOG_LEVEL:-INFO}">
+    <appender-ref ref="CONSOLE"/>
+  </root>
+</configuration>

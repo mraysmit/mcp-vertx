@@ -20,6 +20,10 @@ import io.vertx.core.json.JsonObject;
 import io.vertx.ext.web.Router;
 import io.vertx.ext.web.RoutingContext;
 import io.vertx.ext.web.handler.BodyHandler;
+import io.vertx.ext.web.handler.LoggerFormat;
+import io.vertx.ext.web.handler.LoggerHandler;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.nio.charset.StandardCharsets;
 import java.nio.ByteBuffer;
@@ -40,8 +44,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.LongAdder;
-import java.util.logging.Level;
-import java.util.logging.Logger;
 import java.util.regex.Pattern;
 
 /**
@@ -55,7 +57,7 @@ import java.util.regex.Pattern;
  */
 public final class McpServerVerticle extends VerticleBase {
 
-  private static final Logger LOG = Logger.getLogger(McpServerVerticle.class.getName());
+  private static final Logger LOG = LoggerFactory.getLogger(McpServerVerticle.class);
   private static final Pattern TOOL_NAME = Pattern.compile("[A-Za-z0-9_.-]{1,128}");
   private static final Pattern HTTP_FIELD_NAME = Pattern.compile(
       "[!#$%&'*+.^_`|~0-9A-Za-z-]+");
@@ -137,9 +139,9 @@ public final class McpServerVerticle extends VerticleBase {
     this.schemaValidator = new ToolSchemaValidator(
         inputSchemas, outputSchemas, ToolSchemaValidator.SchemaLimits.defaults());
     this.resourceIdField = requireNonBlank(resourceIdField, "resourceIdField");
-    LOG.info(() -> "MCP server initialized: tools=" + this.tools.size()
+    LOG.atInfo().log(() -> "MCP server initialized: tools=" + this.tools.size()
         + " resourceIdField=" + this.resourceIdField);
-    LOG.fine(() -> "Initialized MCP tool definitions: " + this.tools.keySet());
+    LOG.atDebug().log(() -> "Initialized MCP tool definitions: " + this.tools.keySet());
   }
 
   public McpServerVerticle(Map<String, Tool> tools) {
@@ -159,10 +161,10 @@ public final class McpServerVerticle extends VerticleBase {
     settings = ServerSettings.from(config());
 
     String endpoint = settings.basePath() + "/mcp";
-    LOG.info(() -> "Starting MCP HTTP server: host=" + settings.host()
+    LOG.atInfo().log(() -> "Starting MCP HTTP server: host=" + settings.host()
         + " configuredPort=" + settings.port() + " endpoint=\"" + endpoint + "\""
         + " protocol=" + PROTOCOL_VERSION + " tools=" + tools.size());
-    LOG.fine(() -> "MCP server limits: maxBodyBytes=" + settings.maxBodyBytes()
+    LOG.atDebug().log(() -> "MCP server limits: maxBodyBytes=" + settings.maxBodyBytes()
         + " maxResponseBytes=" + settings.maxResponseBytes()
         + " toolTimeoutMs=" + settings.toolTimeoutMs()
         + " validationTimeoutMs=" + settings.validationTimeoutMs()
@@ -175,6 +177,8 @@ public final class McpServerVerticle extends VerticleBase {
         + " trustedProxies=" + settings.trustedProxies().size()
         + " healthEnabled=" + settings.healthEnabled());
     Router router = Router.router(vertx);
+    router.route().handler(LoggerHandler.create(LoggerFormat.CUSTOM)
+        .customFormatter(this::formatAccessLog));
     router.route().handler(this::enforceTransportSecurity);
     router.options(endpoint).handler(this::handleOptions);
     router.post(endpoint).handler(this::validateMcpMediaHeaders);
@@ -188,7 +192,7 @@ public final class McpServerVerticle extends VerticleBase {
     if (settings.healthEnabled()) {
       router.get(settings.basePath() + "/health/live").handler(this::handleLiveness);
       router.get(settings.basePath() + "/health/ready").handler(this::handleReadiness);
-      LOG.fine(() -> "Health routes enabled under basePath=\""
+      LOG.atDebug().log(() -> "Health routes enabled under basePath=\""
           + settings.basePath() + "\"");
     }
     router.route().failureHandler(this::handleRoutingFailure);
@@ -207,13 +211,13 @@ public final class McpServerVerticle extends VerticleBase {
 
   @Override
   public Future<?> stop() {
-    LOG.info(() -> "Stopping MCP server: port=" + actualPort
+    LOG.atInfo().log(() -> "Stopping MCP server: port=" + actualPort
         + " requests=" + requests.sum() + " toolCalls=" + toolCalls.sum()
         + " toolErrors=" + toolErrors.sum() + " toolTimeouts=" + toolTimeouts.sum()
         + " rejectedCalls=" + rejectedCalls.sum());
     if (cleanupTimerId >= 0) {
       vertx.cancelTimer(cleanupTimerId);
-      LOG.fine(() -> "Cancelled rate-window cleanup timer: timerId=" + cleanupTimerId);
+      LOG.atDebug().log(() -> "Cancelled rate-window cleanup timer: timerId=" + cleanupTimerId);
     }
     rateWindows.clear();
     activeByTool.clear();
@@ -225,11 +229,11 @@ public final class McpServerVerticle extends VerticleBase {
   private void enforceTransportSecurity(RoutingContext ctx) {
     HttpServerRequest request = ctx.request();
     String client = clientAddress(request);
-    LOG.fine(() -> "Checking MCP transport security: method=" + request.method()
+    LOG.atDebug().log(() -> "Checking MCP transport security: method=" + request.method()
         + " path=\"" + request.path() + "\" client=" + client);
     String origin = request.getHeader("Origin");
     if (origin != null && !settings.allowedOrigins().contains(origin)) {
-      LOG.info(() -> "Rejected MCP request from disallowed origin: client=" + client);
+      LOG.atInfo().log(() -> "Rejected MCP request from disallowed origin: client=" + client);
       sendRpcError(ctx.response(), 403, null, ERR_INVALID_REQUEST, "Origin is not allowed", null);
       return;
     }
@@ -243,7 +247,7 @@ public final class McpServerVerticle extends VerticleBase {
       String expected = "Bearer " + settings.authToken();
       String supplied = request.getHeader("Authorization");
       if (!constantTimeEquals(expected, supplied)) {
-        LOG.info(() -> "Rejected unauthenticated MCP request: client=" + client);
+        LOG.atInfo().log(() -> "Rejected unauthenticated MCP request: client=" + client);
         ctx.response().putHeader("WWW-Authenticate", "Bearer");
         sendRpcError(ctx.response(), 401, null, ERR_INVALID_REQUEST, "Authentication required", null);
         return;
@@ -253,19 +257,28 @@ public final class McpServerVerticle extends VerticleBase {
     if (!"OPTIONS".equals(request.method().name())) {
       if (!rateWindows.computeIfAbsent(client, ignored -> new RateWindow())
           .allow(settings.maxRequestsPerMinute())) {
-        LOG.info(() -> "Rate limited MCP client: client=" + client
+        LOG.atInfo().log(() -> "Rate limited MCP client: client=" + client
             + " limitPerMinute=" + settings.maxRequestsPerMinute());
         ctx.response().putHeader("Retry-After", "60");
         sendRpcError(ctx.response(), 429, null, ERR_INTERNAL, "Request rate limit exceeded", null);
         return;
       }
     }
-    LOG.fine(() -> "MCP transport security accepted request: client=" + client);
+    LOG.atDebug().log(() -> "MCP transport security accepted request: client=" + client);
     ctx.next();
   }
 
+  private String formatAccessLog(RoutingContext ctx, long elapsedMillis) {
+    return "MCP HTTP access: method=" + ctx.request().method()
+        + " path=\"" + safeLogValue(ctx.request().path()) + "\""
+        + " status=" + ctx.response().getStatusCode()
+        + " bytes=" + ctx.response().bytesWritten()
+        + " durationMs=" + Math.max(0, elapsedMillis)
+        + " client=" + safeLogValue(clientAddress(ctx.request()));
+  }
+
   private void handleOptions(RoutingContext ctx) {
-    LOG.fine(() -> "Handling MCP CORS preflight: client=" + clientAddress(ctx.request()));
+    LOG.atDebug().log(() -> "Handling MCP CORS preflight: client=" + clientAddress(ctx.request()));
     String requestedHeaders = ctx.request().getHeader("Access-Control-Request-Headers");
     String allowedHeaders = "Authorization, Content-Type, Accept, MCP-Protocol-Version, "
         + "Mcp-Method, Mcp-Name";
@@ -277,7 +290,7 @@ public final class McpServerVerticle extends VerticleBase {
                 && !isStandardRequestHeader(field))) {
           sendRpcError(ctx.response(), 400, null, ERR_INVALID_REQUEST,
            "CORS requested an unsupported header", null);
-          LOG.info(() -> "Rejected MCP CORS preflight with unsupported header: client="
+          LOG.atInfo().log(() -> "Rejected MCP CORS preflight with unsupported header: client="
               + clientAddress(ctx.request()));
           return;
         }
@@ -290,8 +303,8 @@ public final class McpServerVerticle extends VerticleBase {
         .putHeader("Access-Control-Allow-Headers", allowedHeaders)
         .putHeader("Access-Control-Max-Age", "600")
         .end()
-        .onSuccess(ignored -> LOG.fine("MCP CORS preflight completed: status=204"))
-        .onFailure(error -> LOG.log(Level.FINE, "Failed to write CORS response", error));
+        .onSuccess(ignored -> LOG.debug("MCP CORS preflight completed: status=204"))
+        .onFailure(error -> LOG.debug("Failed to write CORS response", error));
   }
 
   private static boolean isStandardRequestHeader(String value) {
@@ -323,7 +336,7 @@ public final class McpServerVerticle extends VerticleBase {
   }
 
   private void methodNotAllowed(RoutingContext ctx) {
-    LOG.info(() -> "Rejected unsupported MCP HTTP method: method=" + ctx.request().method()
+    LOG.atInfo().log(() -> "Rejected unsupported MCP HTTP method: method=" + ctx.request().method()
         + " client=" + clientAddress(ctx.request()));
     ctx.response().putHeader("Allow", "POST, OPTIONS");
     sendRpcError(ctx.response(), 405, null, ERR_INVALID_REQUEST,
@@ -333,12 +346,12 @@ public final class McpServerVerticle extends VerticleBase {
   private void validateMcpMediaHeaders(RoutingContext ctx) {
     requests.increment();
     HttpServerRequest request = ctx.request();
-    LOG.fine(() -> "Validating MCP media headers: client=" + clientAddress(request));
+    LOG.atDebug().log(() -> "Validating MCP media headers: client=" + clientAddress(request));
     String contentType = request.getHeader("Content-Type");
     String mediaType = contentType == null
         ? "" : contentType.split(";", 2)[0].trim().toLowerCase(Locale.ROOT);
     if (!"application/json".equals(mediaType)) {
-      LOG.info(() -> "Rejected MCP request with unsupported Content-Type: mediaType=\""
+      LOG.atInfo().log(() -> "Rejected MCP request with unsupported Content-Type: mediaType=\""
           + mediaType + "\" client=" + clientAddress(request));
       sendRpcError(ctx.response(), 415, null, ERR_INVALID_REQUEST,
           "Content-Type must be application/json", null);
@@ -348,13 +361,13 @@ public final class McpServerVerticle extends VerticleBase {
     String accept = request.getHeader("Accept");
     if (!acceptsMediaType(accept, "application/json")
         || !acceptsMediaType(accept, "text/event-stream")) {
-      LOG.info(() -> "Rejected MCP request with unacceptable response types: client="
+      LOG.atInfo().log(() -> "Rejected MCP request with unacceptable response types: client="
           + clientAddress(request));
       sendRpcError(ctx.response(), 406, null, ERR_INVALID_REQUEST,
           "Accept must list application/json and text/event-stream", null);
       return;
     }
-    LOG.fine("MCP media headers accepted");
+    LOG.debug("MCP media headers accepted");
     ctx.next();
   }
 
@@ -364,7 +377,7 @@ public final class McpServerVerticle extends VerticleBase {
     long startedNanos = System.nanoTime();
 
     String body = ctx.body().asString();
-    LOG.fine(() -> "Decoding MCP request body: bytes="
+    LOG.atDebug().log(() -> "Decoding MCP request body: bytes="
         + (body == null ? 0 : body.getBytes(StandardCharsets.UTF_8).length)
         + " client=" + clientAddress(request));
     if (body == null || body.isBlank()) {
@@ -402,9 +415,9 @@ public final class McpServerVerticle extends VerticleBase {
           error.getMessage(), error.data());
       return;
     }
-    LOG.info(() -> "Accepted MCP request: method=" + safeLogValue(parsed.method())
+    LOG.atInfo().log(() -> "Accepted MCP request: method=" + safeLogValue(parsed.method())
         + " notification=" + !parsed.hasId() + " client=" + clientAddress(request));
-    LOG.fine(() -> "MCP request metadata validated: method=" + safeLogValue(parsed.method())
+    LOG.atDebug().log(() -> "MCP request metadata validated: method=" + safeLogValue(parsed.method())
         + " hasParams=" + !parsed.params().isEmpty());
 
     if (!parsed.hasId()) {
@@ -413,13 +426,13 @@ public final class McpServerVerticle extends VerticleBase {
             "Method " + parsed.method() + " requires a JSON-RPC id", null);
         return;
       }
-      LOG.info(() -> "Accepted MCP extension notification: method="
+      LOG.atInfo().log(() -> "Accepted MCP extension notification: method="
           + safeLogValue(parsed.method()));
       response.setStatusCode(202).end()
-          .onSuccess(ignored -> LOG.fine(() -> "MCP notification completed: method="
+          .onSuccess(ignored -> LOG.atDebug().log(() -> "MCP notification completed: method="
               + safeLogValue(parsed.method())
               + " durationMs=" + elapsedMillis(startedNanos)))
-          .onFailure(error -> LOG.log(Level.FINE,
+          .onFailure(error -> LOG.debug(
               "Failed to write notification response", error));
       return;
     }
@@ -432,7 +445,7 @@ public final class McpServerVerticle extends VerticleBase {
     }
     execution
         .onSuccess(result -> {
-          LOG.info(() -> "MCP request completed: method=" + safeLogValue(parsed.method())
+          LOG.atInfo().log(() -> "MCP request completed: method=" + safeLogValue(parsed.method())
               + " durationMs=" + elapsedMillis(startedNanos));
           sendJsonResponse(response, parsed.id(), result);
         })
@@ -446,9 +459,9 @@ public final class McpServerVerticle extends VerticleBase {
               + " durationMs=" + elapsedMillis(startedNanos)
               + " error=" + safeLogValue(rpcError.getMessage());
           if (rpcError.getCause() == null) {
-            LOG.warning(failureMessage);
+            LOG.warn(failureMessage);
           } else {
-            LOG.log(Level.WARNING, failureMessage, rpcError.getCause());
+            LOG.warn(failureMessage, rpcError.getCause());
           }
           sendRpcError(response, rpcError.httpStatus(), parsed.id(), rpcError.code(),
               rpcError.getMessage(), rpcError.data());
@@ -565,7 +578,7 @@ public final class McpServerVerticle extends VerticleBase {
   }
 
   private Future<JsonObject> dispatch(ParsedRequest request, HttpServerRequest httpRequest) {
-    LOG.fine(() -> "Dispatching MCP request: method=" + safeLogValue(request.method()));
+    LOG.atDebug().log(() -> "Dispatching MCP request: method=" + safeLogValue(request.method()));
     return switch (request.method()) {
       case "server/discover" -> Future.succeededFuture(discoverResult());
       case "tools/list" -> Future.succeededFuture(toolsListResult());
@@ -577,7 +590,7 @@ public final class McpServerVerticle extends VerticleBase {
   }
 
   private JsonObject discoverResult() {
-    LOG.fine(() -> "Rendering server discovery: protocol=" + PROTOCOL_VERSION
+    LOG.atDebug().log(() -> "Rendering server discovery: protocol=" + PROTOCOL_VERSION
         + " tools=" + tools.size());
     return completeResult()
         .put("supportedVersions", new JsonArray().add(PROTOCOL_VERSION))
@@ -588,7 +601,7 @@ public final class McpServerVerticle extends VerticleBase {
   }
 
   private JsonObject toolsListResult() {
-    LOG.info(() -> "Listing MCP tools: count=" + toolDefinitions.size());
+    LOG.atInfo().log(() -> "Listing MCP tools: count=" + toolDefinitions.size());
     JsonArray toolList = new JsonArray();
     toolDefinitions.entrySet().stream()
         .sorted(Map.Entry.comparingByKey())
@@ -608,7 +621,7 @@ public final class McpServerVerticle extends VerticleBase {
     }
     Tool tool = tools.get(toolName);
     if (tool == null) {
-      LOG.info(() -> "Rejected tools/call for unknown tool: tool=" + safeLogValue(toolName));
+      LOG.atInfo().log(() -> "Rejected tools/call for unknown tool: tool=" + safeLogValue(toolName));
       return Future.failedFuture(invalidParams("Unknown tool: " + toolName));
     }
 
@@ -616,7 +629,7 @@ public final class McpServerVerticle extends VerticleBase {
     if (params.containsKey("arguments")) {
       arguments = asJsonObject(params.getValue("arguments"));
       if (arguments == null) {
-        LOG.info(() -> "Rejected tools/call with non-object arguments: tool=" + toolName);
+        LOG.atInfo().log(() -> "Rejected tools/call with non-object arguments: tool=" + toolName);
         return Future.failedFuture(invalidParams("arguments must be an object"));
       }
     }
@@ -632,13 +645,13 @@ public final class McpServerVerticle extends VerticleBase {
     }
 
     JsonObject invocationArguments = arguments.copy();
-    LOG.fine(() -> "Preparing MCP tool invocation: tool=" + toolName
+    LOG.atDebug().log(() -> "Preparing MCP tool invocation: tool=" + toolName
         + " argumentFields=" + invocationArguments.fieldNames().size()
         + " mirroredHeaders=" + schemaValidator.headerBindings(toolName).size());
     return validateSchema(toolName, invocationArguments, false)
         .compose(validationError -> {
           if (!validationError.isEmpty()) {
-            LOG.info(() -> "Rejected invalid MCP tool arguments: tool=" + toolName);
+            LOG.atInfo().log(() -> "Rejected invalid MCP tool arguments: tool=" + toolName);
             return Future.succeededFuture(failedToolResult(
                 new ToolExecutionException("invalid_arguments",
                     "Invalid tool arguments: " + validationError, false, null)));
@@ -678,7 +691,7 @@ public final class McpServerVerticle extends VerticleBase {
                                         Object requestId) {
     if (!tryAcquire(toolName)) {
       rejectedCalls.increment();
-      LOG.info(() -> "Rejected MCP tool invocation at concurrency limit: tool=" + toolName
+      LOG.atInfo().log(() -> "Rejected MCP tool invocation at concurrency limit: tool=" + toolName
           + " activeGlobal=" + activeToolCalls.get());
       return Future.succeededFuture(failedToolResult(new ToolExecutionException(
           "server_busy", "Tool concurrency limit exceeded; retry later", true, null)));
@@ -701,7 +714,7 @@ public final class McpServerVerticle extends VerticleBase {
         ? Long.MAX_VALUE : now + settings.toolTimeoutMs();
     ToolContext context = new ToolContext(correlationId, resourceId, metadata, deadline);
     long startedNanos = System.nanoTime();
-    LOG.fine(() -> "Created MCP tool context: tool=" + toolName
+    LOG.atDebug().log(() -> "Created MCP tool context: tool=" + toolName
         + " correlationId=" + correlationId + " deadlineEpochMs=" + deadline
         + " activeGlobal=" + activeToolCalls.get());
 
@@ -709,12 +722,12 @@ public final class McpServerVerticle extends VerticleBase {
     try {
       invocation = tool.invokeManaged(arguments.copy(), context);
       if (invocation == null) {
-        LOG.warning("MCP tool returned a null invocation: tool=" + toolName
+        LOG.warn("MCP tool returned a null invocation: tool=" + toolName
             + " correlationId=" + correlationId);
         invocation = ToolInvocation.of(Future.failedFuture("Tool returned a null invocation"));
       }
     } catch (RuntimeException error) {
-      LOG.log(Level.WARNING, "MCP tool threw before returning an invocation: tool="
+      LOG.warn("MCP tool threw before returning an invocation: tool="
           + toolName + " correlationId=" + correlationId, error);
       invocation = ToolInvocation.of(Future.failedFuture(error));
     }
@@ -725,7 +738,7 @@ public final class McpServerVerticle extends VerticleBase {
     Future<ToolResult> providerResult = managed.result();
     providerResult.onComplete(completion -> {
       release(toolName);
-      LOG.fine(() -> "MCP provider future completed: tool=" + toolName
+      LOG.atDebug().log(() -> "MCP provider future completed: tool=" + toolName
           + " correlationId=" + correlationId
           + " succeeded=" + completion.succeeded()
           + " durationMs=" + elapsedMillis(startedNanos)
@@ -737,7 +750,7 @@ public final class McpServerVerticle extends VerticleBase {
         .recover(error -> handleToolFailure(error, managed, context, toolName, correlationId));
 
     return outcome
-        .onSuccess(result -> LOG.info(() -> "MCP tool invocation completed: tool=" + toolName
+        .onSuccess(result -> LOG.atInfo().log(() -> "MCP tool invocation completed: tool=" + toolName
             + " correlationId=" + correlationId
             + " resultType=" + result.getClass().getSimpleName()
             + " durationMs=" + elapsedMillis(startedNanos)))
@@ -749,13 +762,13 @@ public final class McpServerVerticle extends VerticleBase {
       return Future.failedFuture("Tool returned no result");
     }
     if (result instanceof CompleteToolResult complete && complete.hasStructuredContent()) {
-      LOG.fine(() -> "Validating structured MCP tool output: tool=" + toolName);
+      LOG.atDebug().log(() -> "Validating structured MCP tool output: tool=" + toolName);
       return validateSchema(toolName, complete.structuredContentValue(), true)
           .compose(error -> error.isEmpty()
               ? Future.succeededFuture(result)
               : Future.failedFuture("Tool output did not match its advertised schema: " + error));
     }
-    LOG.fine(() -> "No structured MCP output validation required: tool=" + toolName
+    LOG.atDebug().log(() -> "No structured MCP output validation required: tool=" + toolName
         + " resultType=" + result.getClass().getSimpleName());
     return Future.succeededFuture(result);
   }
@@ -767,12 +780,12 @@ public final class McpServerVerticle extends VerticleBase {
       toolTimeouts.increment();
       toolErrors.increment();
       context.cancel();
-      LOG.warning("MCP tool timed out: tool=" + toolName + " correlationId=" + correlationId);
+      LOG.warn("MCP tool timed out: tool=" + toolName + " correlationId=" + correlationId);
       return invocation.cancel()
           .timeout(settings.cancellationGraceMs(), TimeUnit.MILLISECONDS)
-          .onSuccess(ignored -> LOG.fine(() -> "Tool cancellation completed: tool="
+          .onSuccess(ignored -> LOG.atDebug().log(() -> "Tool cancellation completed: tool="
               + toolName + " correlationId=" + correlationId))
-          .onFailure(cancelError -> LOG.log(Level.WARNING,
+          .onFailure(cancelError -> LOG.warn(
               "Tool cancellation failed: tool=" + toolName
                   + " correlationId=" + correlationId, cancelError))
           .recover(ignored -> Future.succeededFuture())
@@ -781,11 +794,11 @@ public final class McpServerVerticle extends VerticleBase {
     }
     toolErrors.increment();
     if (error instanceof ToolExecutionException safe) {
-      LOG.info(() -> "MCP tool reported a safe failure: tool=" + toolName
+      LOG.atInfo().log(() -> "MCP tool reported a safe failure: tool=" + toolName
           + " correlationId=" + correlationId + " errorType=" + safe.errorType()
           + " retryable=" + safe.retryable());
     } else {
-      LOG.log(Level.WARNING, "MCP tool failed: tool=" + toolName
+      LOG.warn("MCP tool failed: tool=" + toolName
           + " correlationId=" + correlationId, error);
     }
     return Future.succeededFuture(failedToolResultValue(error));
@@ -793,7 +806,7 @@ public final class McpServerVerticle extends VerticleBase {
 
   private Future<JsonObject> renderToolResult(ToolResult result, JsonObject requestMeta,
                                               Object requestId) {
-    LOG.fine(() -> "Rendering MCP tool result: resultType="
+    LOG.atDebug().log(() -> "Rendering MCP tool result: resultType="
         + result.getClass().getSimpleName());
     if (result instanceof InputRequiredToolResult inputRequired) {
       validateInputCapabilities(inputRequired, requestMeta, requestId);
@@ -833,12 +846,12 @@ public final class McpServerVerticle extends VerticleBase {
   private Future<String> validateSchema(String toolName, Object value, boolean output) {
     long startedNanos = System.nanoTime();
     int active = activeValidations.incrementAndGet();
-    LOG.fine(() -> "Scheduling MCP schema validation: tool=" + toolName
+    LOG.atDebug().log(() -> "Scheduling MCP schema validation: tool=" + toolName
         + " kind=" + (output ? "output" : "input") + " active=" + active);
     if (active > settings.maxConcurrentValidations()) {
       activeValidations.decrementAndGet();
       rejectedCalls.increment();
-      LOG.info(() -> "Rejected MCP schema validation at concurrency limit: tool=" + toolName
+      LOG.atInfo().log(() -> "Rejected MCP schema validation at concurrency limit: tool=" + toolName
           + " active=" + active + " limit=" + settings.maxConcurrentValidations());
       return Future.failedFuture(new ToolExecutionException(
           "server_busy", "Schema validation capacity exceeded; retry later", true, null));
@@ -848,7 +861,7 @@ public final class McpServerVerticle extends VerticleBase {
         : schemaValidator.validate(toolName, (JsonObject) value), false);
     validation.onComplete(completion -> {
       int remaining = activeValidations.decrementAndGet();
-      LOG.fine(() -> "MCP schema validation completed: tool=" + toolName
+      LOG.atDebug().log(() -> "MCP schema validation completed: tool=" + toolName
           + " kind=" + (output ? "output" : "input")
           + " succeeded=" + completion.succeeded()
           + " durationMs=" + elapsedMillis(startedNanos)
@@ -865,7 +878,7 @@ public final class McpServerVerticle extends VerticleBase {
     int global = activeToolCalls.incrementAndGet();
     if (global > settings.maxConcurrentToolCalls()) {
       activeToolCalls.decrementAndGet();
-      LOG.fine(() -> "Global MCP tool concurrency limit reached: tool=" + toolName
+      LOG.atDebug().log(() -> "Global MCP tool concurrency limit reached: tool=" + toolName
           + " active=" + global + " limit=" + settings.maxConcurrentToolCalls());
       return false;
     }
@@ -875,11 +888,11 @@ public final class McpServerVerticle extends VerticleBase {
     if (perTool > settings.maxConcurrentCallsPerTool()) {
       toolCounter.decrementAndGet();
       activeToolCalls.decrementAndGet();
-      LOG.fine(() -> "Per-tool MCP concurrency limit reached: tool=" + toolName
+      LOG.atDebug().log(() -> "Per-tool MCP concurrency limit reached: tool=" + toolName
           + " active=" + perTool + " limit=" + settings.maxConcurrentCallsPerTool());
       return false;
     }
-    LOG.fine(() -> "Acquired MCP tool concurrency slot: tool=" + toolName
+    LOG.atDebug().log(() -> "Acquired MCP tool concurrency slot: tool=" + toolName
         + " activeGlobal=" + global + " activeTool=" + perTool);
     return true;
   }
@@ -888,7 +901,7 @@ public final class McpServerVerticle extends VerticleBase {
     int global = activeToolCalls.decrementAndGet();
     AtomicInteger counter = activeByTool.get(toolName);
     int perTool = counter == null ? 0 : counter.decrementAndGet();
-    LOG.fine(() -> "Released MCP tool concurrency slot: tool=" + toolName
+    LOG.atDebug().log(() -> "Released MCP tool concurrency slot: tool=" + toolName
         + " activeGlobal=" + global + " activeTool=" + perTool);
   }
 
@@ -899,13 +912,13 @@ public final class McpServerVerticle extends VerticleBase {
     JsonObject required = requiredCapabilities(result.inputRequests());
     JsonObject missing = missingCapabilities(required, capabilities);
     if (!missing.isEmpty()) {
-      LOG.info(() -> "Rejected input-required tool result; client capabilities missing: count="
+      LOG.atInfo().log(() -> "Rejected input-required tool result; client capabilities missing: count="
           + missing.size());
       throw new RpcException(ERR_MISSING_CAPABILITY, 400, requestId,
           "Client does not advertise capabilities required by the tool result",
           new JsonObject().put("requiredCapabilities", missing));
     }
-    LOG.fine(() -> "Validated input-required client capabilities: required="
+    LOG.atDebug().log(() -> "Validated input-required client capabilities: required="
         + required.size());
   }
 
@@ -966,7 +979,7 @@ public final class McpServerVerticle extends VerticleBase {
   private void validateToolHeaders(String toolName, JsonObject arguments,
                                    HttpServerRequest request, Object requestId) {
     List<ToolSchemaValidator.HeaderBinding> bindings = schemaValidator.headerBindings(toolName);
-    LOG.fine(() -> "Validating mirrored MCP parameter headers: tool=" + toolName
+    LOG.atDebug().log(() -> "Validating mirrored MCP parameter headers: tool=" + toolName
         + " bindings=" + bindings.size());
     for (ToolSchemaValidator.HeaderBinding binding : bindings) {
       LocatedValue body = locate(arguments, binding.path());
@@ -993,7 +1006,7 @@ public final class McpServerVerticle extends VerticleBase {
         throw headerMismatch(requestId, fieldName + " must match its JSON argument");
       }
     }
-    LOG.fine(() -> "Mirrored MCP parameter headers validated: tool=" + toolName
+    LOG.atDebug().log(() -> "Mirrored MCP parameter headers validated: tool=" + toolName
         + " bindings=" + bindings.size());
   }
 
@@ -1045,7 +1058,7 @@ public final class McpServerVerticle extends VerticleBase {
         .put("id", id)
         .put("result", result);
     if (utf8Size(envelope) > settings.maxResponseBytes()) {
-      LOG.warning("MCP response exceeded configured size limit");
+      LOG.warn("MCP response exceeded configured size limit");
       sendRpcError(response, 500, id, ERR_INTERNAL,
           "Response exceeded the configured size limit", null);
       return;
@@ -1056,7 +1069,7 @@ public final class McpServerVerticle extends VerticleBase {
   private void sendRpcError(HttpServerResponse response, int status, Object id,
                             int code, String message, JsonObject data) {
     int requestedStatus = status;
-    LOG.fine(() -> "Rendering JSON-RPC error: httpStatus=" + requestedStatus
+    LOG.atDebug().log(() -> "Rendering JSON-RPC error: httpStatus=" + requestedStatus
         + " code=" + code + " message=\"" + safeLogValue(message) + "\"");
     JsonObject error = new JsonObject().put("code", code).put("message", message);
     if (data != null) {
@@ -1067,7 +1080,7 @@ public final class McpServerVerticle extends VerticleBase {
         .put("id", id)
         .put("error", error);
     if (settings != null && utf8Size(envelope) > settings.maxResponseBytes()) {
-      LOG.warning("JSON-RPC error exceeded configured size limit; using bounded fallback");
+      LOG.warn("JSON-RPC error exceeded configured size limit; using bounded fallback");
       envelope = new JsonObject().put("jsonrpc", "2.0").put("id", id)
           .put("error", new JsonObject().put("code", ERR_INTERNAL)
               .put("message", "Internal server error"));
@@ -1078,17 +1091,17 @@ public final class McpServerVerticle extends VerticleBase {
 
   private void endJson(HttpServerResponse response, int status, JsonObject envelope) {
     if (response.ended()) {
-      LOG.fine(() -> "Skipped duplicate HTTP response: status=" + status);
+      LOG.atDebug().log(() -> "Skipped duplicate HTTP response: status=" + status);
       return;
     }
     int bytes = utf8Size(envelope);
-    LOG.fine(() -> "Writing MCP HTTP response: status=" + status + " bytes=" + bytes);
+    LOG.atDebug().log(() -> "Writing MCP HTTP response: status=" + status + " bytes=" + bytes);
     response.setStatusCode(status)
         .putHeader("Content-Type", "application/json; charset=utf-8")
         .end(envelope.encode())
-        .onSuccess(ignored -> LOG.fine(() -> "MCP HTTP response written: status=" + status
+        .onSuccess(ignored -> LOG.atDebug().log(() -> "MCP HTTP response written: status=" + status
             + " bytes=" + bytes))
-        .onFailure(error -> LOG.log(Level.FINE, "Failed to write HTTP response", error));
+        .onFailure(error -> LOG.debug("Failed to write HTTP response", error));
   }
 
   private static int utf8Size(JsonObject value) {
@@ -1096,7 +1109,7 @@ public final class McpServerVerticle extends VerticleBase {
   }
 
   private void handleLiveness(RoutingContext ctx) {
-    LOG.fine(() -> "Serving MCP liveness probe: client=" + clientAddress(ctx.request()));
+    LOG.atDebug().log(() -> "Serving MCP liveness probe: client=" + clientAddress(ctx.request()));
     endJson(ctx.response(), 200, new JsonObject().put("status", "UP"));
   }
 
@@ -1112,7 +1125,7 @@ public final class McpServerVerticle extends VerticleBase {
         .put("toolErrors", toolErrors.sum())
         .put("toolTimeouts", toolTimeouts.sum())
         .put("rejectedCalls", rejectedCalls.sum());
-    LOG.fine(() -> "Serving MCP readiness probe: ready=" + ready
+    LOG.atDebug().log(() -> "Serving MCP readiness probe: ready=" + ready
         + " activeToolCalls=" + activeToolCalls.get()
         + " activeValidations=" + activeValidations.get());
     endJson(ctx.response(), ready ? 200 : 503, health);
@@ -1130,9 +1143,9 @@ public final class McpServerVerticle extends VerticleBase {
         + safeLogValue(ctx.request().path())
         + "\" client=" + clientAddress(ctx.request());
     if (failure == null) {
-      LOG.warning(logMessage);
+      LOG.warn(logMessage);
     } else {
-      LOG.log(Level.WARNING, logMessage, failure);
+      LOG.warn(logMessage, failure);
     }
     sendRpcError(ctx.response(), status, null,
         status == 413 ? ERR_INVALID_REQUEST : ERR_INTERNAL, message, null);
@@ -1146,7 +1159,7 @@ public final class McpServerVerticle extends VerticleBase {
     if (forwarded == null) return direct;
     String candidate = forwarded.split(",", 2)[0].trim();
     boolean valid = candidate.length() <= 45 && candidate.matches("[0-9A-Fa-f:.]+");
-    LOG.fine(() -> "Evaluated forwarded MCP client address: proxy=" + direct
+    LOG.atDebug().log(() -> "Evaluated forwarded MCP client address: proxy=" + direct
         + " accepted=" + valid);
     return valid ? candidate : direct;
   }
@@ -1156,7 +1169,7 @@ public final class McpServerVerticle extends VerticleBase {
     int before = rateWindows.size();
     rateWindows.entrySet().removeIf(entry -> entry.getValue().lastSeen() < cutoff);
     int removed = before - rateWindows.size();
-    LOG.fine(() -> "Cleaned MCP rate windows: removed=" + removed
+    LOG.atDebug().log(() -> "Cleaned MCP rate windows: removed=" + removed
         + " remaining=" + rateWindows.size());
   }
 

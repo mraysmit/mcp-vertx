@@ -66,6 +66,32 @@ class MainTest {
             () -> Main.booleanSetting(property, ABSENT_ENVIRONMENT, false)));
   }
 
+  @Test
+  void configures_vertx_to_use_slf4j_when_no_delegate_is_selected() {
+    String previous = System.getProperty(Main.VERTX_LOGGER_FACTORY_PROPERTY);
+    System.clearProperty(Main.VERTX_LOGGER_FACTORY_PROPERTY);
+    try {
+      Main.configureVertxLogging();
+      assertEquals(Main.SLF4J_LOGGER_FACTORY,
+          System.getProperty(Main.VERTX_LOGGER_FACTORY_PROPERTY));
+    } finally {
+      restoreProperty(Main.VERTX_LOGGER_FACTORY_PROPERTY, previous);
+    }
+  }
+
+  @Test
+  void preserves_an_explicit_vertx_logging_delegate() {
+    String previous = System.getProperty(Main.VERTX_LOGGER_FACTORY_PROPERTY);
+    System.setProperty(Main.VERTX_LOGGER_FACTORY_PROPERTY, "example.CustomLoggerFactory");
+    try {
+      Main.configureVertxLogging();
+      assertEquals("example.CustomLoggerFactory",
+          System.getProperty(Main.VERTX_LOGGER_FACTORY_PROPERTY));
+    } finally {
+      restoreProperty(Main.VERTX_LOGGER_FACTORY_PROPERTY, previous);
+    }
+  }
+
   private void withProperties(Map<String, String> values, Runnable assertion) {
     Map<String, String> previous = new LinkedHashMap<>();
     values.forEach((key, value) -> {
@@ -91,5 +117,10 @@ class MainTest {
       if (previous == null) System.clearProperty(key);
       else System.setProperty(key, previous);
     }
+  }
+
+  private void restoreProperty(String key, String value) {
+    if (value == null) System.clearProperty(key);
+    else System.setProperty(key, value);
   }
 }

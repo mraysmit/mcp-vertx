@@ -229,7 +229,7 @@ Never use `recover` merely to log and rethrow. Use `onFailure` for observation:
 
 ```java
 return operation()
-    .onFailure(error -> LOG.log(Level.WARNING, "Operation failed", error));
+    .onFailure(error -> LOG.warn("Operation failed", error));
 ```
 
 ### Use `transform` when both outcomes must be mapped
@@ -414,8 +414,9 @@ tokens, complete arguments, mirrored parameter headers, or full tool results.
 Use INFO for operational milestones that remain useful during normal service:
 startup and shutdown, accepted request methods, request outcomes, tool-call
 outcomes, bounded-capacity rejection, and deliberately safe failure categories.
-Use `Level.FINE` as DEBUG for routing, schema-validation, concurrency, response
-size, timing, and test diagnostics.
+Use SLF4J DEBUG for routing, schema-validation, concurrency, response size,
+timing, and test diagnostics. Configure Vert.x to use its SLF4J logging delegate
+so framework and application records share one backend and format.
 
 Logging is observation, not workflow control. Attach terminal observers to the
 future that owns the operation, preserve its success or failure, and never add
@@ -598,7 +599,7 @@ Normal pipeline:
 return parse(request)
     .compose(this::validate)
     .compose(this::dispatch)
-    .onFailure(error -> LOG.log(Level.WARNING, "Request failed", error));
+    .onFailure(error -> LOG.warn("Request failed", error));
 ```
 
 Tool boundary with deliberate MCP error conversion:
@@ -624,7 +625,7 @@ Best-effort cleanup that preserves the original outcome:
 ```java
 return operation()
     .eventually(() -> closeBestEffort()
-        .onFailure(error -> LOG.log(Level.WARNING, "Cleanup failed", error)));
+        .onFailure(error -> LOG.warn("Cleanup failed", error)));
 ```
 
 The governing idea is simple: compose the real work, preserve honest outcomes,

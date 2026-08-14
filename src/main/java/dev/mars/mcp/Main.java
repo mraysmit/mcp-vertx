@@ -5,29 +5,34 @@ import dev.mars.mcp.tool.ToolRegistry;
 import io.vertx.core.DeploymentOptions;
 import io.vertx.core.Vertx;
 import io.vertx.core.json.JsonObject;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.ServiceLoader;
-import java.util.logging.Level;
-import java.util.logging.Logger;
 
 /** Standalone entry point for the Vert.x MCP server. */
 public final class Main {
 
-  private static final Logger LOG = Logger.getLogger(Main.class.getName());
+  static final String VERTX_LOGGER_FACTORY_PROPERTY =
+      "vertx.logger-delegate-factory-class-name";
+  static final String SLF4J_LOGGER_FACTORY =
+      "io.vertx.core.logging.SLF4JLogDelegateFactory";
+  private static final Logger LOG = LoggerFactory.getLogger(Main.class);
 
   private Main() {}
 
   public static void main(String[] args) {
+    configureVertxLogging();
     LOG.info("Starting mcp-vertx standalone server");
     List<Tool> discoveredTools = new ArrayList<>();
     ServiceLoader.load(Tool.class).forEach(discoveredTools::add);
-    LOG.info(() -> "Discovered " + discoveredTools.size() + " MCP tool provider(s)");
+    LOG.atInfo().log(() -> "Discovered " + discoveredTools.size() + " MCP tool provider(s)");
 
     String resourceIdField = resourceIdField();
     JsonObject config = configuration();
-    LOG.fine(() -> "Resolved MCP configuration: host=" + config.getString("mcp.host")
+    LOG.atDebug().log(() -> "Resolved MCP configuration: host=" + config.getString("mcp.host")
         + " port=" + config.getInteger("mcp.port")
         + " basePath=\"" + config.getString("mcp.basePath") + "\""
         + " authConfigured=" + !config.getString("mcp.authToken").isBlank()
@@ -35,7 +40,7 @@ public final class Main {
         + " resourceIdField=" + resourceIdField);
 
     Vertx vertx = Vertx.vertx();
-    LOG.fine("Created Vert.x runtime and installing JVM shutdown hook");
+    LOG.debug("Created Vert.x runtime and installing JVM shutdown hook");
     Runtime.getRuntime().addShutdownHook(
         new Thread(() -> {
           LOG.info("JVM shutdown requested; closing Vert.x runtime");
@@ -43,27 +48,35 @@ public final class Main {
             vertx.close().toCompletionStage().toCompletableFuture().join();
             LOG.info("Vert.x runtime closed");
           } catch (RuntimeException error) {
-            LOG.log(Level.WARNING, "Vert.x shutdown failed", error);
+            LOG.warn("Vert.x shutdown failed", error);
           }
         }, "mcp-vertx-shutdown"));
 
     var tools = ToolRegistry.of(discoveredTools.toArray(Tool[]::new));
-    LOG.fine(() -> "Validated MCP tool registrations: "
+    LOG.atDebug().log(() -> "Validated MCP tool registrations: "
         + tools.keySet().stream().sorted().toList());
-    LOG.fine(() -> "Deploying MCP server verticle with " + tools.size() + " registered tool(s)");
+    LOG.atDebug().log(() -> "Deploying MCP server verticle with " + tools.size() + " registered tool(s)");
     vertx.deployVerticle(
         new McpServerVerticle(tools, resourceIdField),
         new DeploymentOptions().setConfig(config))
       .onSuccess(id -> LOG.info("MCP server deployed: deploymentId=" + id
           + " tools=" + tools.size()))
       .onFailure(error -> {
-        LOG.log(Level.SEVERE, "Unable to start MCP server", error);
+        LOG.error("Unable to start MCP server", error);
         vertx.close()
-            .onSuccess(ignored -> LOG.fine("Vert.x runtime closed after startup failure"))
-            .onFailure(closeError -> LOG.log(Level.WARNING,
+            .onSuccess(ignored -> LOG.debug("Vert.x runtime closed after startup failure"))
+            .onFailure(closeError -> LOG.warn(
                 "Vert.x close failed after startup failure", closeError))
             .onComplete(ignored -> System.exit(1));
       });
+  }
+
+  static void configureVertxLogging() {
+    if (System.getProperty(VERTX_LOGGER_FACTORY_PROPERTY) == null) {
+      System.setProperty(VERTX_LOGGER_FACTORY_PROPERTY, SLF4J_LOGGER_FACTORY);
+    }
+    LOG.debug("Vert.x logging backend configured: delegateFactory={}",
+        System.getProperty(VERTX_LOGGER_FACTORY_PROPERTY));
   }
 
   static String resourceIdField() {

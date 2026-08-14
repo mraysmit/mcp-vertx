@@ -29,21 +29,22 @@ import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.logging.Logger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 @ExtendWith({VertxExtension.class, TestLoggingExtension.class})
 class McpServerVerticleTest {
 
-  private static final Logger LOG = Logger.getLogger(McpServerVerticleTest.class.getName());
+  private static final Logger LOG = LoggerFactory.getLogger(McpServerVerticleTest.class);
 
   private Map<String, Tool> tools;
   private HttpClient httpClient;
 
   @BeforeEach
   void setUp(Vertx vertx) {
-    LOG.fine(() -> "Creating MCP integration-test HTTP client: vertx=" + vertx);
+    LOG.atDebug().log(() -> "Creating MCP integration-test HTTP client: vertx=" + vertx);
     httpClient = vertx.createHttpClient();
     Tool echo = new Tool() {
       @Override public String name() { return "text.echo"; }
@@ -90,7 +91,7 @@ class McpServerVerticleTest {
       }
     };
     tools = ToolRegistry.of(echo, status, failing, hanging);
-    LOG.fine(() -> "Prepared MCP integration-test tools: " + tools.keySet());
+    LOG.atDebug().log(() -> "Prepared MCP integration-test tools: " + tools.keySet());
   }
 
   @Test
@@ -1112,12 +1113,12 @@ class McpServerVerticleTest {
   private Future<McpServerVerticle> deploy(Vertx vertx, JsonObject config) {
     McpServerVerticle server = new McpServerVerticle(tools, "resourceId");
     JsonObject deploymentConfig = config.copy().put("mcp.port", 0);
-    LOG.fine(() -> "Deploying MCP integration-test server: tools=" + tools.size()
+    LOG.atDebug().log(() -> "Deploying MCP integration-test server: tools=" + tools.size()
         + " basePath=\"" + deploymentConfig.getString("mcp.basePath", "") + "\""
         + " healthEnabled=" + deploymentConfig.getBoolean("mcp.healthEnabled", false));
     return vertx.deployVerticle(server, new DeploymentOptions().setConfig(deploymentConfig))
         .map(ignored -> {
-          LOG.fine(() -> "MCP integration-test server deployed: port=" + server.actualPort());
+          LOG.atDebug().log(() -> "MCP integration-test server deployed: port=" + server.actualPort());
           return server;
         });
   }
@@ -1160,7 +1161,7 @@ class McpServerVerticleTest {
                                    String body, JsonObject headers) {
     String rpcMethod = headers.getString("Mcp-Method", "unspecified");
     int bodyBytes = body.getBytes(StandardCharsets.UTF_8).length;
-    LOG.fine(() -> "Sending MCP integration-test request: method=" + rpcMethod
+    LOG.atDebug().log(() -> "Sending MCP integration-test request: method=" + rpcMethod
         + " path=\"" + path + "\" port=" + port + " bodyBytes=" + bodyBytes
         + " headerNames=" + headers.fieldNames());
     return httpClient.request(HttpMethod.POST, port, "127.0.0.1", path)
@@ -1169,7 +1170,7 @@ class McpServerVerticleTest {
           return request.send(Buffer.buffer(body));
         })
         .map(response -> {
-          LOG.fine(() -> "Received MCP integration-test response: method=" + rpcMethod
+          LOG.atDebug().log(() -> "Received MCP integration-test response: method=" + rpcMethod
               + " status=" + response.statusCode());
           return new Response(response);
         });
@@ -1197,11 +1198,11 @@ class McpServerVerticleTest {
   }
 
   private Future<JsonObject> expectJson(Response response, int expectedStatus) {
-    LOG.fine(() -> "Asserting MCP JSON response: expectedStatus=" + expectedStatus
+    LOG.atDebug().log(() -> "Asserting MCP JSON response: expectedStatus=" + expectedStatus
         + " actualStatus=" + response.status());
     assertEquals(expectedStatus, response.status());
     return response.json()
-        .onSuccess(json -> LOG.fine(() -> "Decoded MCP JSON response: topLevelFields="
+        .onSuccess(json -> LOG.atDebug().log(() -> "Decoded MCP JSON response: topLevelFields="
             + json.fieldNames()));
   }
 
