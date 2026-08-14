@@ -9,6 +9,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -129,6 +130,23 @@ class ToolSchemaValidatorTest {
         .validateOutput("test", new JsonObject()));
     assertThrows(IllegalArgumentException.class,
         () -> validator.validate("unknown", new JsonObject()));
+  }
+
+  @Test
+  void validates_array_and_primitive_structured_outputs() {
+    JsonObject input = new JsonObject().put("type", "object");
+    JsonObject arraySchema = new JsonObject().put("type", "array")
+        .put("items", new JsonObject().put("type", "integer"));
+    JsonObject stringSchema = new JsonObject().put("type", "string");
+    ToolSchemaValidator validator = new ToolSchemaValidator(
+        Map.of("array", input, "string", input),
+        Map.of("array", arraySchema, "string", stringSchema),
+        ToolSchemaValidator.SchemaLimits.defaults());
+
+    assertEquals("", validator.validateOutput("array", new JsonArray().add(1).add(2)));
+    assertFalse(validator.validateOutput("array", new JsonArray().add("bad")).isEmpty());
+    assertEquals("", validator.validateOutput("string", "value"));
+    assertFalse(validator.validateOutput("string", true).isEmpty());
   }
 
   private ToolSchemaValidator validator(JsonObject schema,

@@ -10,7 +10,9 @@ public final class ContentBlock {
   private final JsonObject value;
 
   private ContentBlock(JsonObject value) {
-    this.value = Objects.requireNonNull(value, "value").copy();
+    JsonObject copy = Objects.requireNonNull(value, "value").copy();
+    McpWireValidator.contentBlock(copy);
+    this.value = copy;
   }
 
   public JsonObject toJson() {

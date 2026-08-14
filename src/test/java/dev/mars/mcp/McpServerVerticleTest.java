@@ -242,6 +242,22 @@ class McpServerVerticleTest {
   }
 
   @Test
+  void rejects_malformed_multi_round_trip_retry_parameters(Vertx vertx,
+                                                            VertxTestContext ctx) {
+    JsonObject params = new JsonObject().put("name", "text.echo")
+        .put("arguments", new JsonObject().put("message", "hello"))
+        .put("inputResponses", new JsonArray());
+
+    deployAndPost(vertx, modernRequest("tools/call", "bad-input-responses", params))
+        .compose(response -> expectJson(response, 200))
+        .onSuccess(json -> ctx.verify(() -> {
+          assertEquals(-32602, json.getJsonObject("error").getInteger("code"));
+          ctx.completeNow();
+        }))
+        .onFailure(ctx::failNow);
+  }
+
+  @Test
   void tool_failures_are_mcp_error_results(Vertx vertx, VertxTestContext ctx) {
     JsonObject params = new JsonObject().put("name", "test.fail").put("arguments", new JsonObject());
     deployAndPost(vertx, modernRequest("tools/call", 5, params))
@@ -397,8 +413,12 @@ class McpServerVerticleTest {
       @Override public String name() { return "test.interactive"; }
       @Override public ToolInvocation invokeManaged(JsonObject args, ToolContext context) {
         ToolResult result = new InputRequiredToolResult(
-            new JsonObject().put("elicitation/create", new JsonObject()
-                .put("message", "Continue?")), "state-1", new JsonObject());
+            new JsonObject().put("confirmation", new JsonObject()
+                .put("method", "elicitation/create")
+                .put("params", new JsonObject().put("mode", "form")
+                    .put("message", "Continue?")
+                    .put("requestedSchema", new JsonObject().put("type", "object")))),
+            "state-1", new JsonObject());
         return ToolInvocation.of(Future.succeededFuture(result));
       }
     };
@@ -410,8 +430,8 @@ class McpServerVerticleTest {
         .compose(response -> expectJson(response, 400))
         .onSuccess(json -> ctx.verify(() -> {
           assertEquals(-32021, json.getJsonObject("error").getInteger("code"));
-          assertEquals("elicitation", json.getJsonObject("error").getJsonObject("data")
-              .getJsonArray("requiredCapabilities").getString(0));
+          assertNotNull(json.getJsonObject("error").getJsonObject("data")
+              .getJsonObject("requiredCapabilities").getJsonObject("elicitation"));
           ctx.completeNow();
         }))
         .onFailure(ctx::failNow);
@@ -424,8 +444,12 @@ class McpServerVerticleTest {
       @Override public String name() { return "test.interactive"; }
       @Override public ToolInvocation invokeManaged(JsonObject args, ToolContext context) {
         return ToolInvocation.of(Future.succeededFuture(new InputRequiredToolResult(
-            new JsonObject().put("elicitation/create", new JsonObject()
-                .put("message", "Continue?")), "state-2",
+            new JsonObject().put("confirmation", new JsonObject()
+                .put("method", "elicitation/create")
+                .put("params", new JsonObject().put("mode", "form")
+                    .put("message", "Continue?")
+                    .put("requestedSchema", new JsonObject().put("type", "object")))),
+            "state-2",
             new JsonObject().put("provider", "test"))));
       }
     };
@@ -446,6 +470,32 @@ class McpServerVerticleTest {
           assertEquals("test", result.getJsonObject("_meta").getString("provider"));
           assertNotNull(result.getJsonObject("_meta")
               .getJsonObject("io.modelcontextprotocol/serverInfo"));
+          ctx.completeNow();
+        }))
+        .onFailure(ctx::failNow);
+  }
+
+  @Test
+  void input_required_results_allow_request_state_only(Vertx vertx,
+                                                        VertxTestContext ctx) {
+    Tool loadShedding = new Tool() {
+      @Override public String name() { return "test.load-shedding"; }
+      @Override public ToolInvocation invokeManaged(JsonObject args, ToolContext context) {
+        return ToolInvocation.of(Future.succeededFuture(
+            InputRequiredToolResult.stateOnly("retry-state")));
+      }
+    };
+    tools = ToolRegistry.of(loadShedding);
+    JsonObject params = new JsonObject().put("name", "test.load-shedding")
+        .put("arguments", new JsonObject());
+
+    deployAndPost(vertx, modernRequest("tools/call", "state-only", params))
+        .compose(Response::json)
+        .onSuccess(json -> ctx.verify(() -> {
+          JsonObject result = json.getJsonObject("result");
+          assertEquals("input_required", result.getString("resultType"));
+          assertEquals("retry-state", result.getString("requestState"));
+          assertFalse(result.containsKey("inputRequests"));
           ctx.completeNow();
         }))
         .onFailure(ctx::failNow);
@@ -778,6 +828,22 @@ class McpServerVerticleTest {
     deployAndPost(vertx, request)
         .compose(response -> expectJson(response, 400))
         .onSuccess(json -> ctx.verify(() -> {
+          assertEquals(-32602, json.getJsonObject("error").getInteger("code"));
+          ctx.completeNow();
+        }))
+        .onFailure(ctx::failNow);
+  }
+
+  @Test
+  void rejects_missing_protocol_header_with_header_error(Vertx vertx,
+                                                          VertxTestContext ctx) {
+    JsonObject request = modernRequest("ping", "missing-header", new JsonObject());
+    JsonObject headers = baseHeaders("ping");
+    headers.remove("MCP-Protocol-Version");
+    deploy(vertx, new JsonObject())
+        .compose(server -> postRaw(vertx, server.actualPort(), request.encode(), headers))
+        .compose(response -> expectJson(response, 400))
+        .onSuccess(json -> ctx.verify(() -> {
           assertEquals(-32020, json.getJsonObject("error").getInteger("code"));
           ctx.completeNow();
         }))
@@ -867,6 +933,22 @@ class McpServerVerticleTest {
   }
 
   @Test
+  void rejects_malformed_nested_client_capabilities(Vertx vertx,
+                                                     VertxTestContext ctx) {
+    JsonObject request = modernRequest("ping", "nested-capability", new JsonObject());
+    request.getJsonObject("params").getJsonObject("_meta")
+        .getJsonObject("io.modelcontextprotocol/clientCapabilities")
+        .put("sampling", new JsonObject().put("tools", true));
+    deployAndPost(vertx, request)
+        .compose(response -> expectJson(response, 400))
+        .onSuccess(json -> ctx.verify(() -> {
+          assertEquals(-32602, json.getJsonObject("error").getInteger("code"));
+          ctx.completeNow();
+        }))
+        .onFailure(ctx::failNow);
+  }
+
+  @Test
   void rejects_content_type_other_than_json(Vertx vertx, VertxTestContext ctx) {
     JsonObject request = modernRequest("ping", 12, new JsonObject());
     JsonObject headers = baseHeaders("ping").put("Content-Type", "text/plain");
@@ -887,6 +969,27 @@ class McpServerVerticleTest {
         .compose(server -> postRaw(vertx, server.actualPort(), request.encode(), headers))
         .onSuccess(response -> ctx.verify(() -> {
           assertEquals(406, response.status());
+          ctx.completeNow();
+        }))
+        .onFailure(ctx::failNow);
+  }
+
+  @Test
+  void rejects_accept_lookalikes_and_zero_quality_ranges(Vertx vertx,
+                                                         VertxTestContext ctx) {
+    JsonObject request = modernRequest("ping", "accept-lookalike", new JsonObject());
+    JsonObject lookalike = baseHeaders("ping")
+        .put("Accept", "application/jsonish, text/event-streaming");
+    JsonObject zeroQuality = baseHeaders("ping")
+        .put("Accept", "application/json;q=0, text/event-stream");
+    deploy(vertx, new JsonObject())
+        .compose(server -> postRaw(vertx, server.actualPort(), request.encode(), lookalike)
+            .compose(first -> {
+              assertEquals(406, first.status());
+              return postRaw(vertx, server.actualPort(), request.encode(), zeroQuality);
+            }))
+        .onSuccess(second -> ctx.verify(() -> {
+          assertEquals(406, second.status());
           ctx.completeNow();
         }))
         .onFailure(ctx::failNow);

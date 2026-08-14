@@ -10,7 +10,7 @@ Java 25 with Vert.x 5.
 - `server/discover`, `tools/list`, and `tools/call` methods
 - Per-request MCP version, method, client identity, and capability validation
 - JSON Schema 2020-12 and draft-07 tool-input validation
-- Native text, image, audio, resource-link, and structured tool results
+- Native text, image, audio, resource-link, and arbitrary JSON structured results
 - Multi-round-trip `input_required` results with client-capability checks
 - Cooperative cancellation, execution deadlines, and bounded concurrency
 
@@ -67,6 +67,12 @@ java -jar target/mcp-vertx-0.3.0-SNAPSHOT.jar
 
 Send the token as `Authorization: Bearer <token>`. Use TLS at a reverse proxy
 when the endpoint crosses a trusted local network boundary.
+
+This token setting is a private deployment mechanism, not the standard MCP
+OAuth authorization profile. Internet-facing servers that need interoperable
+MCP authorization must place the endpoint behind an OAuth 2.1 resource server
+that provides RFC 9728 Protected Resource Metadata, validates token audience
+and scopes, and returns standards-compliant `WWW-Authenticate` challenges.
 
 ## Configuration
 
@@ -156,6 +162,22 @@ override `definition()` and `invokeManaged()` and return `ToolResult` values.
 Throw `ToolExecutionException` only for messages deliberately safe to disclose;
 all other provider failures are logged with a correlation ID and returned as a
 generic tool error.
+
+`CompleteToolResult.structured(...)` accepts any JSON value, including arrays
+and primitives. For multi-round-trip results, key `inputRequests` by a
+server-assigned request ID and put the MCP method and parameters in the value:
+
+```java
+return InputRequiredToolResult.requests(Map.of(
+    "confirmation", new McpInputRequest("elicitation/create", new JsonObject()
+        .put("mode", "form")
+        .put("message", "Continue?")
+        .put("requestedSchema", new JsonObject().put("type", "object")))),
+    "opaque-state", new JsonObject());
+```
+
+Use `InputRequiredToolResult.stateOnly(...)` when returning an opaque retry
+handle without asking the client to perform an input request.
 
 Input schemas may place `x-mcp-header` on statically reachable primitive
 properties (`string`, `integer`, or `boolean`). The server then requires the

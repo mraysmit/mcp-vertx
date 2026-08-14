@@ -451,6 +451,13 @@ At invocation time:
 - distinguish safe provider errors from internal exceptions;
 - preserve correlation information for logs and metrics.
 
+Provider-produced MCP structures are untrusted even when the provider is on the
+application classpath. Validate content blocks, tool metadata, icons,
+multi-round-trip request objects, result metadata, and structured JSON values
+before serialization. An `inputRequests` map is keyed by server-assigned request
+IDs; capability checks must inspect each value's `method`, never infer a method
+from the map key. Structured content is any JSON value, not only an object.
+
 A provider's returned `Future` must represent completion of the work, not merely
 submission of fire-and-forget work.
 

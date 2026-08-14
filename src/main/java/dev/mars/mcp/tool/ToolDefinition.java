@@ -22,9 +22,13 @@ public record ToolDefinition(
     inputSchema = inputSchema == null
         ? new JsonObject().put("type", "object") : inputSchema.copy();
     outputSchema = outputSchema == null ? null : outputSchema.copy();
-    icons = icons == null ? null : icons.copy();
-    annotations = annotations == null ? null : annotations.copy();
-    execution = execution == null ? null : execution.copy();
+    icons = icons == null ? null : (JsonArray) McpJsonValues.copy(icons);
+    annotations = annotations == null
+        ? null : (JsonObject) McpJsonValues.copy(annotations);
+    execution = execution == null ? null : (JsonObject) McpJsonValues.copy(execution);
+    McpWireValidator.icons(icons);
+    McpWireValidator.toolAnnotations(annotations);
+    if (execution != null) McpJsonValues.copy(execution);
   }
 
   public JsonObject toJson() {

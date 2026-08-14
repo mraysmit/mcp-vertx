@@ -300,6 +300,28 @@ public final class McpServerVerticle extends VerticleBase {
         .contains(value.toLowerCase(Locale.ROOT));
   }
 
+  private static boolean acceptsMediaType(String accept, String required) {
+    if (accept == null) return false;
+    for (String rawRange : accept.split(",")) {
+      String[] parts = rawRange.trim().split(";");
+      if (!required.equalsIgnoreCase(parts[0].trim())) continue;
+      double quality = 1.0;
+      for (int index = 1; index < parts.length; index++) {
+        String parameter = parts[index].trim();
+        int separator = parameter.indexOf('=');
+        if (separator > 0 && "q".equalsIgnoreCase(parameter.substring(0, separator).trim())) {
+          try {
+            quality = Double.parseDouble(parameter.substring(separator + 1).trim());
+          } catch (NumberFormatException error) {
+            return false;
+          }
+        }
+      }
+      if (quality > 0.0 && quality <= 1.0) return true;
+    }
+    return false;
+  }
+
   private void methodNotAllowed(RoutingContext ctx) {
     LOG.info(() -> "Rejected unsupported MCP HTTP method: method=" + ctx.request().method()
         + " client=" + clientAddress(ctx.request()));
@@ -324,9 +346,8 @@ public final class McpServerVerticle extends VerticleBase {
     }
 
     String accept = request.getHeader("Accept");
-    String normalizedAccept = accept == null ? "" : accept.toLowerCase(Locale.ROOT);
-    if (!normalizedAccept.contains("application/json")
-        || !normalizedAccept.contains("text/event-stream")) {
+    if (!acceptsMediaType(accept, "application/json")
+        || !acceptsMediaType(accept, "text/event-stream")) {
       LOG.info(() -> "Rejected MCP request with unacceptable response types: client="
           + clientAddress(request));
       sendRpcError(ctx.response(), 406, null, ERR_INVALID_REQUEST,
@@ -463,13 +484,17 @@ public final class McpServerVerticle extends VerticleBase {
 
   private void validateModernMetadata(HttpServerRequest request, ParsedRequest parsed) {
     String headerVersion = request.getHeader(PROTOCOL_VERSION_HEADER);
+    if (headerVersion == null || headerVersion.isBlank()) {
+      throw headerMismatch(parsed.id(), "MCP-Protocol-Version header is required");
+    }
     JsonObject meta = asJsonObject(parsed.params().getValue("_meta"));
-    Object rawBodyVersion = meta == null ? null : meta.getValue(META_PROTOCOL_VERSION);
-    String bodyVersion = rawBodyVersion instanceof String value ? value : null;
-
-    if (headerVersion == null || bodyVersion == null) {
-      throw headerMismatch(parsed.id(),
-          "MCP-Protocol-Version header and params._meta protocolVersion are required strings");
+    if (meta == null) {
+      throw invalidMetadata(parsed.id(), "params._meta must be an object");
+    }
+    Object rawBodyVersion = meta.getValue(META_PROTOCOL_VERSION);
+    if (!(rawBodyVersion instanceof String bodyVersion) || bodyVersion.isBlank()) {
+      throw invalidMetadata(parsed.id(),
+          "params._meta must contain io.modelcontextprotocol/protocolVersion as a string");
     }
     if (!headerVersion.equals(bodyVersion)) {
       throw headerMismatch(parsed.id(),
@@ -482,10 +507,12 @@ public final class McpServerVerticle extends VerticleBase {
       throw new RpcException(ERR_UNSUPPORTED_PROTOCOL, 400, parsed.id(),
           "Unsupported protocol version", data);
     }
-    if (asJsonObject(meta.getValue(META_CLIENT_CAPABILITIES)) == null) {
+    JsonObject clientCapabilities = asJsonObject(meta.getValue(META_CLIENT_CAPABILITIES));
+    if (clientCapabilities == null) {
       throw invalidMetadata(parsed.id(),
           "params._meta must contain io.modelcontextprotocol/clientCapabilities");
     }
+    validateClientCapabilities(clientCapabilities, parsed.id());
     Object rawClientInfo = meta.getValue(META_CLIENT_INFO);
     JsonObject clientInfo = asJsonObject(rawClientInfo);
     if (rawClientInfo != null && (clientInfo == null
@@ -505,6 +532,34 @@ public final class McpServerVerticle extends VerticleBase {
       if (name == null || !name.equals(headerName)) {
         throw headerMismatch(parsed.id(),
             "Mcp-Name header must match params.name for tools/call");
+      }
+    }
+  }
+
+  private void validateClientCapabilities(JsonObject capabilities, Object requestId) {
+    for (String name : List.of("roots", "sampling", "elicitation")) {
+      if (capabilities.containsKey(name)
+          && asJsonObject(capabilities.getValue(name)) == null) {
+        throw invalidMetadata(requestId, "client capability '" + name + "' must be an object");
+      }
+    }
+    JsonObject sampling = asJsonObject(capabilities.getValue("sampling"));
+    if (sampling != null) {
+      for (String name : List.of("context", "tools")) {
+        if (sampling.containsKey(name) && asJsonObject(sampling.getValue(name)) == null) {
+          throw invalidMetadata(requestId,
+              "client capability 'sampling." + name + "' must be an object");
+        }
+      }
+    }
+    JsonObject elicitation = asJsonObject(capabilities.getValue("elicitation"));
+    if (elicitation != null) {
+      for (String name : List.of("form", "url")) {
+        if (elicitation.containsKey(name)
+            && asJsonObject(elicitation.getValue(name)) == null) {
+          throw invalidMetadata(requestId,
+              "client capability 'elicitation." + name + "' must be an object");
+        }
       }
     }
   }
@@ -566,6 +621,11 @@ public final class McpServerVerticle extends VerticleBase {
       }
     }
     try {
+      validateInputResponseParams(params, requestId);
+    } catch (RpcException error) {
+      return Future.failedFuture(error);
+    }
+    try {
       validateToolHeaders(toolName, arguments, request, requestId);
     } catch (RpcException error) {
       return Future.failedFuture(error);
@@ -588,6 +648,29 @@ public final class McpServerVerticle extends VerticleBase {
         .recover(error -> error instanceof ToolExecutionException
             ? Future.succeededFuture(failedToolResult(error))
             : Future.failedFuture(error));
+  }
+
+  private void validateInputResponseParams(JsonObject params, Object requestId) {
+    if (params.containsKey("requestState")
+        && !(params.getValue("requestState") instanceof String)) {
+      throw new RpcException(ERR_INVALID_PARAMS, 200, requestId,
+          "requestState must be a string", null);
+    }
+    if (!params.containsKey("inputResponses")) return;
+    JsonObject responses = asJsonObject(params.getValue("inputResponses"));
+    if (responses == null) {
+      throw new RpcException(ERR_INVALID_PARAMS, 200, requestId,
+          "inputResponses must be an object", null);
+    }
+    responses.forEach(entry -> {
+      if (entry.getKey() == null || entry.getKey().isBlank()
+          || !(entry.getValue() instanceof JsonObject response)
+          || !(response.getValue("resultType") instanceof String resultType)
+          || resultType.isBlank()) {
+        throw new RpcException(ERR_INVALID_PARAMS, 200, requestId,
+            "Each inputResponses entry must have a request ID and resultType", null);
+      }
+    });
   }
 
   private Future<JsonObject> invokeTool(String toolName, Tool tool, JsonObject arguments,
@@ -665,9 +748,9 @@ public final class McpServerVerticle extends VerticleBase {
     if (result == null) {
       return Future.failedFuture("Tool returned no result");
     }
-    if (result instanceof CompleteToolResult complete && complete.structuredContent() != null) {
+    if (result instanceof CompleteToolResult complete && complete.hasStructuredContent()) {
       LOG.fine(() -> "Validating structured MCP tool output: tool=" + toolName);
-      return validateSchema(toolName, complete.structuredContent().copy(), true)
+      return validateSchema(toolName, complete.structuredContentValue(), true)
           .compose(error -> error.isEmpty()
               ? Future.succeededFuture(result)
               : Future.failedFuture("Tool output did not match its advertised schema: " + error));
@@ -747,7 +830,7 @@ public final class McpServerVerticle extends VerticleBase {
     return result;
   }
 
-  private Future<String> validateSchema(String toolName, JsonObject value, boolean output) {
+  private Future<String> validateSchema(String toolName, Object value, boolean output) {
     long startedNanos = System.nanoTime();
     int active = activeValidations.incrementAndGet();
     LOG.fine(() -> "Scheduling MCP schema validation: tool=" + toolName
@@ -762,7 +845,7 @@ public final class McpServerVerticle extends VerticleBase {
     }
     Future<String> validation = vertx.executeBlocking(() -> output
         ? schemaValidator.validateOutput(toolName, value)
-        : schemaValidator.validate(toolName, value), false);
+        : schemaValidator.validate(toolName, (JsonObject) value), false);
     validation.onComplete(completion -> {
       int remaining = activeValidations.decrementAndGet();
       LOG.fine(() -> "MCP schema validation completed: tool=" + toolName
@@ -813,14 +896,8 @@ public final class McpServerVerticle extends VerticleBase {
                                          JsonObject requestMeta, Object requestId) {
     JsonObject capabilities = requestMeta == null ? null
         : asJsonObject(requestMeta.getValue(META_CLIENT_CAPABILITIES));
-    Set<String> required = ConcurrentHashMap.newKeySet();
-    collectRequiredCapabilities(result.inputRequests(), required);
-    JsonArray missing = new JsonArray();
-    required.stream().sorted().forEach(capability -> {
-      if (capabilities == null || !capabilities.containsKey(capability)) {
-        missing.add(capability);
-      }
-    });
+    JsonObject required = requiredCapabilities(result.inputRequests());
+    JsonObject missing = missingCapabilities(required, capabilities);
     if (!missing.isEmpty()) {
       LOG.info(() -> "Rejected input-required tool result; client capabilities missing: count="
           + missing.size());
@@ -832,28 +909,58 @@ public final class McpServerVerticle extends VerticleBase {
         + required.size());
   }
 
-  private void collectRequiredCapabilities(Object node, Set<String> required) {
-    if (node instanceof JsonObject object) {
-      object.forEach(entry -> {
-        addCapabilityForMethod(entry.getKey(), required);
-        collectRequiredCapabilities(entry.getValue(), required);
-      });
-    } else if (node instanceof Map<?, ?> map) {
-      map.forEach((key, value) -> {
-        addCapabilityForMethod(String.valueOf(key), required);
-        collectRequiredCapabilities(value, required);
-      });
-    } else if (node instanceof JsonArray array) {
-      array.forEach(value -> collectRequiredCapabilities(value, required));
-    } else if (node instanceof List<?> list) {
-      list.forEach(value -> collectRequiredCapabilities(value, required));
-    }
+  private JsonObject requiredCapabilities(JsonObject inputRequests) {
+    JsonObject required = new JsonObject();
+    if (inputRequests == null) return required;
+    inputRequests.forEach(entry -> {
+      JsonObject request = (JsonObject) entry.getValue();
+      String method = request.getString("method");
+      JsonObject params = request.getJsonObject("params", new JsonObject());
+      switch (method) {
+        case "sampling/createMessage" -> {
+          JsonObject sampling = required.getJsonObject("sampling", new JsonObject());
+          if (params.containsKey("tools") || params.containsKey("toolChoice")) {
+            sampling.put("tools", new JsonObject());
+          }
+          Object includeContext = params.getValue("includeContext");
+          if (includeContext instanceof String value && !"none".equals(value)) {
+            sampling.put("context", new JsonObject());
+          }
+          required.put("sampling", sampling);
+        }
+        case "elicitation/create" -> {
+          JsonObject elicitation = required.getJsonObject("elicitation", new JsonObject());
+          if ("url".equals(params.getString("mode"))) {
+            elicitation.put("url", new JsonObject());
+          }
+          required.put("elicitation", elicitation);
+        }
+        case "roots/list" -> required.put("roots", new JsonObject());
+        default -> throw new IllegalArgumentException("Unsupported MCP input request method: " + method);
+      }
+    });
+    return required;
   }
 
-  private void addCapabilityForMethod(String method, Set<String> required) {
-    if (method.startsWith("sampling/")) required.add("sampling");
-    if (method.startsWith("elicitation/")) required.add("elicitation");
-    if (method.startsWith("roots/")) required.add("roots");
+  private JsonObject missingCapabilities(JsonObject required, JsonObject supplied) {
+    JsonObject missing = new JsonObject();
+    required.forEach(entry -> {
+      JsonObject requiredValue = (JsonObject) entry.getValue();
+      JsonObject suppliedValue = supplied == null ? null
+          : asJsonObject(supplied.getValue(entry.getKey()));
+      if (suppliedValue == null) {
+        missing.put(entry.getKey(), requiredValue.copy());
+        return;
+      }
+      JsonObject missingNested = new JsonObject();
+      requiredValue.forEach(nested -> {
+        if (asJsonObject(suppliedValue.getValue(nested.getKey())) == null) {
+          missingNested.put(nested.getKey(), new JsonObject());
+        }
+      });
+      if (!missingNested.isEmpty()) missing.put(entry.getKey(), missingNested);
+    });
+    return missing;
   }
 
   private void validateToolHeaders(String toolName, JsonObject arguments,
@@ -1093,7 +1200,12 @@ public final class McpServerVerticle extends VerticleBase {
   }
 
   private static String decodeMirroredHeader(String value, Object id, String headerName) {
-    if (value == null || !value.startsWith("=?base64?") || !value.endsWith("?=")) {
+    if (value == null) return null;
+    if (!value.startsWith("=?base64?") || !value.endsWith("?=")) {
+      if (!isPlainHeaderValue(value)) {
+        throw headerMismatch(id, headerName
+            + " must be visible ASCII without leading or trailing whitespace, or Base64 encoded");
+      }
       return value;
     }
     String encoded = value.substring("=?base64?".length(), value.length() - 2);
@@ -1107,6 +1219,20 @@ public final class McpServerVerticle extends VerticleBase {
     } catch (IllegalArgumentException | CharacterCodingException error) {
       throw headerMismatch(id, headerName + " contains invalid Base64-encoded UTF-8");
     }
+  }
+
+  private static boolean isPlainHeaderValue(String value) {
+    if (!value.isEmpty()
+        && (value.charAt(0) == ' ' || value.charAt(0) == '\t'
+            || value.charAt(value.length() - 1) == ' '
+            || value.charAt(value.length() - 1) == '\t')) {
+      return false;
+    }
+    for (int index = 0; index < value.length(); index++) {
+      char character = value.charAt(index);
+      if (character < 0x20 || character > 0x7e) return false;
+    }
+    return true;
   }
 
   private static RpcException invalidRequest(Object id, String message) {

@@ -5,6 +5,7 @@ import com.networknt.schema.InputFormat;
 import com.networknt.schema.Schema;
 import com.networknt.schema.SchemaRegistry;
 import com.networknt.schema.SpecificationVersion;
+import io.vertx.core.json.Json;
 import io.vertx.core.json.JsonObject;
 
 import java.nio.charset.StandardCharsets;
@@ -86,7 +87,7 @@ public final class ToolSchemaValidator {
   }
 
   /** Returns an empty string when no output schema exists or output is valid. */
-  public String validateOutput(String toolName, JsonObject output) {
+  public String validateOutput(String toolName, Object output) {
     Schema schema = outputSchemas.get(toolName);
     if (schema == null) {
       LOG.fine(() -> "Skipping MCP tool output validation; no schema advertised: tool="
@@ -103,8 +104,9 @@ public final class ToolSchemaValidator {
     return headerBindings.getOrDefault(toolName, List.of());
   }
 
-  private String validateWith(Schema schema, JsonObject value) {
-    List<Error> errors = schema.validate(value.encode(), InputFormat.JSON);
+  private String validateWith(Schema schema, Object value) {
+    Object copy = McpJsonValues.copy(value);
+    List<Error> errors = schema.validate(Json.encode(copy), InputFormat.JSON);
     return errors.stream()
         .sorted(Comparator.comparing((Error error) -> error.getInstanceLocation().toString())
             .thenComparing(Error::getMessage))
