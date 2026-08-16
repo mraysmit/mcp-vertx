@@ -1,0 +1,26 @@
+services:
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.6.3
+    command: start-dev --import-realm
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: local-admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: local-admin-not-for-production
+      KC_HOSTNAME: http://127.0.0.1:8180
+      KC_HTTP_ENABLED: "true"
+      KC_HEALTH_ENABLED: "true"
+    ports:
+      - "127.0.0.1:8180:8080"
+    volumes:
+      - ../../.oauth-runtime/realm-mcp.json:/opt/keycloak/data/import/realm-mcp.json:ro
+    mem_limit: 1g
+    restart: "no"
+
+  caddy:
+    image: caddy:2.11.4-alpine
+    ports:
+      - "127.0.0.1:${MCP_OAUTH_HTTPS_PORT:-18443}:8443"
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ../../.oauth-runtime/caddy-data:/data
+      - ../../.oauth-runtime/caddy-config:/config
+    restart: "no"

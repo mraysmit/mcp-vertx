@@ -36,6 +36,7 @@ public final class Main {
         + " port=" + config.getInteger("mcp.port")
         + " basePath=\"" + config.getString("mcp.basePath") + "\""
         + " authConfigured=" + !config.getString("mcp.authToken").isBlank()
+        + " oauthEnabled=" + config.getBoolean("mcp.oauth.enabled")
         + " healthEnabled=" + config.getBoolean("mcp.healthEnabled")
         + " resourceIdField=" + resourceIdField);
 
@@ -91,6 +92,16 @@ public final class Main {
         .put("mcp.allowedOrigins", setting(
             "mcp.allowedOrigins", "MCP_ALLOWED_ORIGINS", ""))
         .put("mcp.authToken", setting("mcp.authToken", "MCP_AUTH_TOKEN", ""))
+        .put("mcp.oauth.enabled", booleanSetting(
+            "mcp.oauth.enabled", "MCP_OAUTH_ENABLED", false))
+        .put("mcp.oauth.resourceUri", setting(
+            "mcp.oauth.resourceUri", "MCP_OAUTH_RESOURCE_URI", ""))
+        .put("mcp.oauth.issuer", setting(
+            "mcp.oauth.issuer", "MCP_OAUTH_ISSUER", ""))
+        .put("mcp.oauth.requiredScopes", setting(
+            "mcp.oauth.requiredScopes", "MCP_OAUTH_REQUIRED_SCOPES", ""))
+        .put("mcp.oauth.clockSkewSeconds", integerSetting(
+            "mcp.oauth.clockSkewSeconds", "MCP_OAUTH_CLOCK_SKEW_SECONDS", 30))
         .put("mcp.maxRequestsPerMinute", integerSetting(
             "mcp.maxRequestsPerMinute", "MCP_MAX_REQUESTS_PER_MINUTE", 120))
         .put("mcp.maxBodyBytes", longSetting(

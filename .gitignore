@@ -39,6 +39,7 @@ release.properties
 
 # Runtime / packaging
 META-INF/
+.oauth-runtime/
 
 # Environment
 .env

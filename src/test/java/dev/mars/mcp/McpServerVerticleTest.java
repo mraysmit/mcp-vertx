@@ -278,6 +278,65 @@ class McpServerVerticleTest {
   }
 
   @Test
+  void accepts_standard_inspector_initialization_without_protocol_header(
+      Vertx vertx, VertxTestContext ctx) {
+    JsonObject request = new JsonObject()
+        .put("jsonrpc", "2.0")
+        .put("id", 0)
+        .put("method", "initialize")
+        .put("params", new JsonObject()
+            .put("protocolVersion", McpServerVerticle.PROTOCOL_VERSION)
+            .put("capabilities", new JsonObject())
+            .put("clientInfo", new JsonObject()
+                .put("name", "MCP Inspector")
+                .put("version", "2.2.0")));
+    JsonObject headers = new JsonObject()
+        .put("Content-Type", "application/json")
+        .put("Accept", "application/json, text/event-stream");
+
+    deploy(vertx, new JsonObject())
+        .compose(server -> postRaw(vertx, server.actualPort(), request.encode(), headers))
+        .compose(response -> expectJson(response, 200))
+        .onSuccess(json -> ctx.verify(() -> {
+          JsonObject result = json.getJsonObject("result");
+          assertEquals(McpServerVerticle.PROTOCOL_VERSION, result.getString("protocolVersion"));
+          assertEquals(McpServerVerticle.SERVER_NAME,
+              result.getJsonObject("serverInfo").getString("name"));
+          assertNotNull(result.getJsonObject("capabilities").getJsonObject("tools"));
+          ctx.completeNow();
+        }))
+        .onFailure(ctx::failNow);
+  }
+
+  @Test
+  void negotiates_stable_standard_protocol_used_by_inspector(
+      Vertx vertx, VertxTestContext ctx) {
+    JsonObject request = new JsonObject()
+        .put("jsonrpc", "2.0")
+        .put("id", 0)
+        .put("method", "initialize")
+        .put("params", new JsonObject()
+            .put("protocolVersion", "2025-11-25")
+            .put("capabilities", new JsonObject())
+            .put("clientInfo", new JsonObject()
+                .put("name", "MCP Inspector")
+                .put("version", "2.2.0")));
+    JsonObject headers = new JsonObject()
+        .put("Content-Type", "application/json")
+        .put("Accept", "application/json, text/event-stream");
+
+    deploy(vertx, new JsonObject())
+        .compose(server -> postRaw(vertx, server.actualPort(), request.encode(), headers))
+        .compose(response -> expectJson(response, 200))
+        .onSuccess(json -> ctx.verify(() -> {
+          assertEquals("2025-11-25",
+              json.getJsonObject("result").getString("protocolVersion"));
+          ctx.completeNow();
+        }))
+        .onFailure(ctx::failNow);
+  }
+
+  @Test
   void rejects_non_object_multi_round_trip_response_entries(Vertx vertx,
                                                               VertxTestContext ctx) {
     JsonObject params = new JsonObject().put("name", "text.echo")

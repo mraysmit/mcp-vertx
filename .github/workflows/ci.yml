@@ -36,6 +36,10 @@ jobs:
           node-version: '24'
           package-manager-cache: false
 
+      - name: Verify repeatable executable packaging
+        shell: pwsh
+        run: .\scripts\verify-packaging.ps1
+
       - name: Verify with Maven
         shell: pwsh
         run: |

@@ -1,0 +1,13 @@
+{
+  admin off
+  auto_https disable_redirects
+}
+
+https://localhost:8443 {
+  tls internal
+  log {
+    output stdout
+    format json
+  }
+  reverse_proxy host.docker.internal:3001
+}

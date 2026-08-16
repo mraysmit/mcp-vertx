@@ -1,0 +1,99 @@
+{
+  "realm": "mcp",
+  "enabled": true,
+  "displayName": "mcp-vertx local OAuth integration",
+  "sslRequired": "none",
+  "accessTokenLifespan": 300,
+  "clientScopes": [
+    {
+      "name": "mcp:read",
+      "description": "Allows discovery and invocation of the local MCP resource",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "true"
+      }
+    }
+  ],
+  "clients": [
+    {
+      "clientId": "mcp-local-smoke-client",
+      "name": "mcp-vertx local smoke client",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "mcp-local-smoke-secret-not-for-production",
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": true,
+      "fullScopeAllowed": false,
+      "optionalClientScopes": ["mcp:read"],
+      "protocolMappers": [
+        {
+          "name": "mcp canonical resource audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.custom.audience": "https://localhost:8443/mcp",
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "introspection.token.claim": "true"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "mcp-inspector-native",
+      "name": "MCP Inspector native PKCE client",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "consentRequired": false,
+      "redirectUris": ["http://127.0.0.1:6276/oauth/callback"],
+      "webOrigins": [],
+      "fullScopeAllowed": false,
+      "optionalClientScopes": ["mcp:read"],
+      "attributes": {
+        "pkce.code.challenge.method": "S256"
+      },
+      "protocolMappers": [
+        {
+          "name": "mcp canonical resource audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.custom.audience": "https://localhost:8443/mcp",
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "introspection.token.claim": "true"
+          }
+        }
+      ]
+    }
+  ],
+  "users": [
+    {
+      "username": "mcp-local-user",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "mcp-local-user@example.invalid",
+      "firstName": "MCP",
+      "lastName": "Local User",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "mcp-local-user-not-for-production",
+          "temporary": false
+        }
+      ]
+    }
+  ]
+}

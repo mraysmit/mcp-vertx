@@ -63,6 +63,7 @@ public final class McpServerVerticle extends VerticleBase {
       "[!#$%&'*+.^_`|~0-9A-Za-z-]+");
 
   static final String PROTOCOL_VERSION = "2026-07-28";
+  static final String STANDARD_PROTOCOL_VERSION = "2025-11-25";
   static final String SERVER_NAME = "mcp-vertx";
   static final String SERVER_VERSION = "0.3.0";
   static final String PROTOCOL_VERSION_HEADER = "MCP-Protocol-Version";
@@ -102,6 +103,7 @@ public final class McpServerVerticle extends VerticleBase {
 
   private volatile int actualPort = -1;
   private volatile ServerSettings settings;
+  private volatile OAuthResourceServer oauthResourceServer;
   private long cleanupTimerId = -1;
 
   public McpServerVerticle(Map<String, Tool> tools, String resourceIdField) {
@@ -173,40 +175,50 @@ public final class McpServerVerticle extends VerticleBase {
         + " maxConcurrentValidations=" + settings.maxConcurrentValidations()
         + " maxRequestsPerMinute=" + settings.maxRequestsPerMinute()
         + " authConfigured=" + !settings.authToken().isBlank()
+        + " oauthEnabled=" + settings.oauth().enabled()
         + " allowedOrigins=" + settings.allowedOrigins().size()
         + " trustedProxies=" + settings.trustedProxies().size()
         + " healthEnabled=" + settings.healthEnabled());
-    Router router = Router.router(vertx);
-    router.route().handler(LoggerHandler.create(LoggerFormat.CUSTOM)
-        .customFormatter(this::formatAccessLog));
-    router.route().handler(this::enforceTransportSecurity);
-    router.options(endpoint).handler(this::handleOptions);
-    router.post(endpoint).handler(this::validateMcpMediaHeaders);
-    router.post(endpoint)
-        .handler(BodyHandler.create(false)
-            .setBodyLimit(settings.maxBodyBytes())
-            .setMergeFormAttributes(false))
-        .handler(this::handleMcpPost);
-    router.get(endpoint).handler(this::methodNotAllowed);
-    router.delete(endpoint).handler(this::methodNotAllowed);
-    if (settings.healthEnabled()) {
-      router.get(settings.basePath() + "/health/live").handler(this::handleLiveness);
-      router.get(settings.basePath() + "/health/ready").handler(this::handleReadiness);
-      LOG.atDebug().log(() -> "Health routes enabled under basePath=\""
-          + settings.basePath() + "\"");
-    }
-    router.route().failureHandler(this::handleRoutingFailure);
+    return OAuthResourceServer.create(vertx, settings.oauth()).compose(resourceServer -> {
+      oauthResourceServer = resourceServer;
+      Router router = Router.router(vertx);
+      router.route().handler(LoggerHandler.create(LoggerFormat.CUSTOM)
+          .customFormatter(this::formatAccessLog));
+      if (resourceServer != null) {
+        router.get(resourceServer.metadataPath()).handler(resourceServer::handleMetadata);
+      }
+      router.route().handler(this::enforceTransportSecurity);
+      router.options(endpoint).handler(this::handleOptions);
+      router.post(endpoint).handler(this::validateMcpMediaHeaders);
+      router.post(endpoint)
+          .handler(BodyHandler.create(false)
+              .setBodyLimit(settings.maxBodyBytes())
+              .setMergeFormAttributes(false))
+          .handler(this::handleMcpPost);
+      router.get(endpoint).handler(this::methodNotAllowed);
+      router.delete(endpoint).handler(this::methodNotAllowed);
+      if (settings.healthEnabled()) {
+        router.get(settings.basePath() + "/health/live").handler(this::handleLiveness);
+        router.get(settings.basePath() + "/health/ready").handler(this::handleReadiness);
+        LOG.atDebug().log(() -> "Health routes enabled under basePath=\""
+            + settings.basePath() + "\"");
+      }
+      router.route().failureHandler(this::handleRoutingFailure);
 
-    return vertx.createHttpServer()
-        .requestHandler(router)
-        .listen(settings.port(), settings.host())
-        .map(server -> {
-          actualPort = server.actualPort();
-          cleanupTimerId = vertx.setPeriodic(120_000, ignored -> cleanupRateWindows());
-          LOG.info("MCP server started on " + settings.host() + ":" + actualPort
-              + " (endpoint=\"" + endpoint + "\", protocol=" + PROTOCOL_VERSION + ")");
-          return null;
-        });
+      return vertx.createHttpServer()
+          .requestHandler(router)
+          .listen(settings.port(), settings.host())
+          .map(server -> {
+            actualPort = server.actualPort();
+            cleanupTimerId = vertx.setPeriodic(120_000, ignored -> cleanupRateWindows());
+            LOG.info("MCP server started on " + settings.host() + ":" + actualPort
+                + " (endpoint=\"" + endpoint + "\", protocol=" + PROTOCOL_VERSION + ")");
+            return null;
+          }).onFailure(error -> {
+            resourceServer.close();
+            oauthResourceServer = null;
+          });
+    });
   }
 
   @Override
@@ -221,6 +233,10 @@ public final class McpServerVerticle extends VerticleBase {
     }
     rateWindows.clear();
     activeByTool.clear();
+    if (oauthResourceServer != null) {
+      oauthResourceServer.close();
+      oauthResourceServer = null;
+    }
     actualPort = -1;
     LOG.info("MCP server stopped");
     return Future.succeededFuture();
@@ -243,6 +259,43 @@ public final class McpServerVerticle extends VerticleBase {
           .putHeader("Vary", "Origin");
     }
 
+    if (!"OPTIONS".equals(request.method().name()) && oauthResourceServer != null) {
+      oauthResourceServer.authenticate(request.getHeader("Authorization"))
+          .onSuccess(authentication -> {
+            switch (authentication.status()) {
+              case AUTHENTICATED -> {
+                LOG.atDebug().log(() -> "OAuth access token accepted: client=" + client);
+                enforceRateLimitAndContinue(ctx, client);
+              }
+              case INSUFFICIENT_SCOPE -> {
+                LOG.atInfo().log(() -> "Rejected OAuth token with insufficient scope: client=" + client);
+                String scope = oauthResourceServer.requiredScopeValue();
+                ctx.response().putHeader("WWW-Authenticate", oauthChallenge(
+                    "insufficient_scope", scope));
+                sendRpcError(ctx.response(), 403, null, ERR_INVALID_REQUEST,
+                    "Insufficient OAuth scope", null);
+              }
+              case MISSING -> {
+                LOG.atInfo().log(() -> "Rejected MCP request without an OAuth token: client=" + client);
+                ctx.response().putHeader("WWW-Authenticate", oauthChallenge(null, null));
+                sendRpcError(ctx.response(), 401, null, ERR_INVALID_REQUEST,
+                    "Authentication required", null);
+              }
+              case INVALID -> {
+                LOG.atInfo().log(() -> "Rejected invalid OAuth access token: client=" + client);
+                ctx.response().putHeader("WWW-Authenticate", oauthChallenge("invalid_token", null));
+                sendRpcError(ctx.response(), 401, null, ERR_INVALID_REQUEST,
+                    "Invalid access token", null);
+              }
+            }
+          })
+          .onFailure(error -> {
+            LOG.warn("OAuth authentication failed unexpectedly", error);
+            sendRpcError(ctx.response(), 500, null, ERR_INTERNAL, "Authentication failed", null);
+          });
+      return;
+    }
+
     if (!"OPTIONS".equals(request.method().name()) && !settings.authToken().isBlank()) {
       String expected = "Bearer " + settings.authToken();
       String supplied = request.getHeader("Authorization");
@@ -254,7 +307,11 @@ public final class McpServerVerticle extends VerticleBase {
       }
     }
 
-    if (!"OPTIONS".equals(request.method().name())) {
+    enforceRateLimitAndContinue(ctx, client);
+  }
+
+  private void enforceRateLimitAndContinue(RoutingContext ctx, String client) {
+    if (!"OPTIONS".equals(ctx.request().method().name())) {
       if (!rateWindows.computeIfAbsent(client, ignored -> new RateWindow())
           .allow(settings.maxRequestsPerMinute())) {
         LOG.atInfo().log(() -> "Rate limited MCP client: client=" + client
@@ -266,6 +323,14 @@ public final class McpServerVerticle extends VerticleBase {
     }
     LOG.atDebug().log(() -> "MCP transport security accepted request: client=" + client);
     ctx.next();
+  }
+
+  private String oauthChallenge(String error, String scope) {
+    StringBuilder value = new StringBuilder("Bearer resource_metadata=\"")
+        .append(oauthResourceServer.metadataUri()).append('"');
+    if (error != null) value.append(", error=\"").append(error).append('"');
+    if (scope != null && !scope.isBlank()) value.append(", scope=\"").append(scope).append('"');
+    return value.toString();
   }
 
   private String formatAccessLog(RoutingContext ctx, long elapsedMillis) {
@@ -409,7 +474,7 @@ public final class McpServerVerticle extends VerticleBase {
     ParsedRequest parsed;
     try {
       parsed = parseRequest(message);
-      validateModernMetadata(request, parsed);
+      validateRequestMetadata(request, parsed);
     } catch (RpcException error) {
       sendRpcError(response, error.httpStatus(), error.id(), error.code(),
           error.getMessage(), error.data());
@@ -493,6 +558,64 @@ public final class McpServerVerticle extends VerticleBase {
       }
     }
     return new ParsedRequest(rawId, hasId, method, params);
+  }
+
+  private void validateRequestMetadata(HttpServerRequest request, ParsedRequest parsed) {
+    JsonObject meta = asJsonObject(parsed.params().getValue("_meta"));
+    boolean extendedProfile = request.getHeader(METHOD_HEADER) != null
+        || meta != null && meta.containsKey(META_PROTOCOL_VERSION);
+    if (extendedProfile) {
+      validateModernMetadata(request, parsed);
+      return;
+    }
+    validateStandardMetadata(request, parsed);
+  }
+
+  private void validateStandardMetadata(HttpServerRequest request, ParsedRequest parsed) {
+    if ("initialize".equals(parsed.method())) {
+      Object rawVersion = parsed.params().getValue("protocolVersion");
+      if (!(rawVersion instanceof String requestedVersion) || requestedVersion.isBlank()) {
+        throw invalidMetadata(parsed.id(),
+            "initialize params.protocolVersion must be a non-empty string");
+      }
+      validateStandardProtocolVersion(requestedVersion, parsed.id());
+      if (asJsonObject(parsed.params().getValue("capabilities")) == null) {
+        throw invalidMetadata(parsed.id(), "initialize params.capabilities must be an object");
+      }
+      JsonObject clientInfo = asJsonObject(parsed.params().getValue("clientInfo"));
+      if (clientInfo == null
+          || !(clientInfo.getValue("name") instanceof String name) || name.isBlank()
+          || !(clientInfo.getValue("version") instanceof String version) || version.isBlank()) {
+        throw invalidMetadata(parsed.id(),
+            "initialize params.clientInfo name and version must be non-empty strings");
+      }
+      String headerVersion = request.getHeader(PROTOCOL_VERSION_HEADER);
+      if (headerVersion != null && !headerVersion.isBlank()
+          && !headerVersion.equals(requestedVersion)) {
+        throw headerMismatch(parsed.id(),
+            "MCP-Protocol-Version header must match initialize params.protocolVersion");
+      }
+      return;
+    }
+
+    String headerVersion = request.getHeader(PROTOCOL_VERSION_HEADER);
+    if (headerVersion == null || headerVersion.isBlank()) {
+      throw headerMismatch(parsed.id(), "MCP-Protocol-Version header is required");
+    }
+    validateStandardProtocolVersion(headerVersion, parsed.id());
+  }
+
+  private void validateStandardProtocolVersion(String requestedVersion, Object requestId) {
+    if (!STANDARD_PROTOCOL_VERSION.equals(requestedVersion)
+        && !PROTOCOL_VERSION.equals(requestedVersion)) {
+      JsonObject data = new JsonObject()
+          .put("supported", new JsonArray()
+              .add(STANDARD_PROTOCOL_VERSION)
+              .add(PROTOCOL_VERSION))
+          .put("requested", requestedVersion);
+      throw new RpcException(ERR_UNSUPPORTED_PROTOCOL, 400, requestId,
+          "Unsupported protocol version", data);
+    }
   }
 
   private void validateModernMetadata(HttpServerRequest request, ParsedRequest parsed) {
@@ -580,6 +703,8 @@ public final class McpServerVerticle extends VerticleBase {
   private Future<JsonObject> dispatch(ParsedRequest request, HttpServerRequest httpRequest) {
     LOG.atDebug().log(() -> "Dispatching MCP request: method=" + safeLogValue(request.method()));
     return switch (request.method()) {
+      case "initialize" -> Future.succeededFuture(
+          initializeResult(request.params().getString("protocolVersion")));
       case "server/discover" -> Future.succeededFuture(discoverResult());
       case "tools/list" -> Future.succeededFuture(toolsListResult());
       case "tools/call" -> callTool(request.params(), httpRequest, request.id());
@@ -587,6 +712,16 @@ public final class McpServerVerticle extends VerticleBase {
           ERR_METHOD_NOT_FOUND, 404, request.id(),
           "Method not found: " + request.method(), null));
     };
+  }
+
+  private JsonObject initializeResult(String negotiatedProtocolVersion) {
+    LOG.atInfo().log(() -> "Initializing standard MCP client: protocol="
+        + negotiatedProtocolVersion);
+    return new JsonObject()
+        .put("protocolVersion", negotiatedProtocolVersion)
+        .put("capabilities", serverCapabilities())
+        .put("serverInfo", serverInfo())
+        .put("instructions", "Call tools/list to discover available tools before invoking tools/call.");
   }
 
   private JsonObject discoverResult() {
@@ -1295,13 +1430,15 @@ public final class McpServerVerticle extends VerticleBase {
       long maxResponseBytes,
       boolean healthEnabled,
       Set<String> trustedProxies,
-      String clientAddressHeader) {
+      String clientAddressHeader,
+      OAuthResourceServer.Options oauth) {
 
     static ServerSettings from(JsonObject config) {
       int port = config.getInteger("mcp.port", DEFAULT_MCP_PORT);
       String host = requireNonBlank(config.getString("mcp.host", DEFAULT_HOST), "mcp.host");
       String basePath = normalizeBasePath(config.getString("mcp.basePath", ""));
       String authToken = config.getString("mcp.authToken", "");
+      OAuthResourceServer.Options oauth = OAuthResourceServer.Options.from(config);
       Set<String> allowedOrigins = parseOrigins(config.getValue("mcp.allowedOrigins"));
       int rateLimit = positive(config.getInteger("mcp.maxRequestsPerMinute", 120),
           "mcp.maxRequestsPerMinute");
@@ -1331,7 +1468,11 @@ public final class McpServerVerticle extends VerticleBase {
       if (port < 0 || port > 65_535) {
         throw new IllegalArgumentException("mcp.port must be between 0 and 65535");
       }
-      if (!isLoopback(host) && authToken.isBlank()) {
+      if (!authToken.isBlank() && oauth.enabled()) {
+        throw new IllegalArgumentException(
+            "mcp.authToken and mcp.oauth.enabled are mutually exclusive");
+      }
+      if (!isLoopback(host) && authToken.isBlank() && !oauth.enabled()) {
         throw new IllegalArgumentException(
             "mcp.authToken is required when mcp.host is not a loopback address");
       }
@@ -1345,7 +1486,7 @@ public final class McpServerVerticle extends VerticleBase {
           rateLimit, maxBodyBytes, toolTimeoutMs, validationTimeoutMs,
           cancellationGraceMs, maxConcurrentToolCalls, maxConcurrentCallsPerTool,
           maxConcurrentValidations, maxResponseBytes, healthEnabled,
-          trustedProxies, clientAddressHeader);
+          trustedProxies, clientAddressHeader, oauth);
     }
 
     private static String normalizeBasePath(String value) {
