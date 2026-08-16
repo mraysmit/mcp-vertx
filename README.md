@@ -28,6 +28,35 @@ java -jar target/mcp-vertx-0.3.0-SNAPSHOT.jar
 The server binds to `127.0.0.1:3001` by default. With no external tool
 providers on the classpath, `tools/list` returns an empty list.
 
+## Official conformance checks
+
+The test-only conformance launcher supplies the named diagnostic tools required
+by the official MCP server scenarios without adding them to the production JAR.
+Run the pinned targeted `2026-07-28` checks from PowerShell:
+
+```powershell
+.\scripts\run-conformance.ps1
+```
+
+The default set covers `tools/list`, text/image/audio/embedded/mixed/error tool
+results, core multi-round-trip flows, wire schemas, and DNS-rebinding protection.
+Select individual scenarios with `-Scenario`, or run the complete dated
+requirements set with `-Requirements`. The complete set also tests prompts,
+resources, completion, Tasks, and extensions that this tools-only server does
+not currently implement.
+
+The runner pins `@modelcontextprotocol/conformance@0.2.0-alpha.11`, compiles the
+fixture on the test classpath, allows only the harness's loopback Origin, and
+uses `Tee-Object` to preserve harness, server, and result evidence under
+`logs/`. That directory is deliberately ignored by Git and is not removed by
+`mvn clean`.
+
+The [GitHub Actions CI workflow](.github/workflows/ci.yml) runs the clean Maven
+gate and this targeted conformance set on a Windows runner with Temurin Java 25
+and Node.js 24. It uploads the Maven log, conformance logs/results, Surefire
+reports, JaCoCo report, and shaded JAR for 14 days, including when a verification
+step fails.
+
 ## Logging
 
 The server uses the standard Vert.x 5 logging integration: application code

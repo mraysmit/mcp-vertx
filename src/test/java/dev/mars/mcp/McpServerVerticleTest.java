@@ -259,6 +259,41 @@ class McpServerVerticleTest {
   }
 
   @Test
+  void accepts_method_specific_multi_round_trip_responses(Vertx vertx,
+                                                           VertxTestContext ctx) {
+    JsonObject elicitationResult = new JsonObject().put("action", "accept")
+        .put("content", new JsonObject().put("name", "Alice"));
+    JsonObject params = new JsonObject().put("name", "text.echo")
+        .put("arguments", new JsonObject().put("message", "hello"))
+        .put("inputResponses", new JsonObject().put("user_name", elicitationResult));
+
+    deployAndPost(vertx, modernRequest("tools/call", "valid-input-responses", params))
+        .compose(response -> expectJson(response, 200))
+        .onSuccess(json -> ctx.verify(() -> {
+          assertNotNull(json.getJsonObject("result"));
+          assertNull(json.getJsonObject("error"));
+          ctx.completeNow();
+        }))
+        .onFailure(ctx::failNow);
+  }
+
+  @Test
+  void rejects_non_object_multi_round_trip_response_entries(Vertx vertx,
+                                                              VertxTestContext ctx) {
+    JsonObject params = new JsonObject().put("name", "text.echo")
+        .put("arguments", new JsonObject().put("message", "hello"))
+        .put("inputResponses", new JsonObject().put("user_name", "Alice"));
+
+    deployAndPost(vertx, modernRequest("tools/call", "invalid-response-entry", params))
+        .compose(response -> expectJson(response, 200))
+        .onSuccess(json -> ctx.verify(() -> {
+          assertEquals(-32602, json.getJsonObject("error").getInteger("code"));
+          ctx.completeNow();
+        }))
+        .onFailure(ctx::failNow);
+  }
+
+  @Test
   void tool_failures_are_mcp_error_results(Vertx vertx, VertxTestContext ctx) {
     JsonObject params = new JsonObject().put("name", "test.fail").put("arguments", new JsonObject());
     deployAndPost(vertx, modernRequest("tools/call", 5, params))

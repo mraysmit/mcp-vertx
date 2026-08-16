@@ -677,11 +677,9 @@ public final class McpServerVerticle extends VerticleBase {
     }
     responses.forEach(entry -> {
       if (entry.getKey() == null || entry.getKey().isBlank()
-          || !(entry.getValue() instanceof JsonObject response)
-          || !(response.getValue("resultType") instanceof String resultType)
-          || resultType.isBlank()) {
+          || !(entry.getValue() instanceof JsonObject)) {
         throw new RpcException(ERR_INVALID_PARAMS, 200, requestId,
-            "Each inputResponses entry must have a request ID and resultType", null);
+            "Each inputResponses entry must have a request ID and object result", null);
       }
     });
   }
