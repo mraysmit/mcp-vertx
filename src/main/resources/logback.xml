@@ -10,6 +10,7 @@
   </appender>
 
   <logger name="dev.mars.mcp" level="${MCP_LOG_LEVEL:-DEBUG}"/>
+  <logger name="dev.mars.a2a" level="${A2A_LOG_LEVEL:-DEBUG}"/>
   <logger name="io.vertx.core" level="${VERTX_LOG_LEVEL:-DEBUG}"/>
   <logger name="io.vertx.ext.web" level="${VERTX_WEB_LOG_LEVEL:-DEBUG}"/>
   <logger name="io.vertx.ext.web.handler.LoggerHandler"

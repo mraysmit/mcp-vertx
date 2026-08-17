@@ -1,5 +1,7 @@
 package dev.mars.mcp;
 
+import dev.mars.a2a.A2aAgent;
+import dev.mars.a2a.A2aServerVerticle;
 import dev.mars.mcp.tool.Tool;
 import dev.mars.mcp.tool.ToolRegistry;
 import io.vertx.core.DeploymentOptions;
@@ -30,14 +32,24 @@ public final class Main {
     ServiceLoader.load(Tool.class).forEach(discoveredTools::add);
     LOG.atInfo().log(() -> "Discovered " + discoveredTools.size() + " MCP tool provider(s)");
 
+    List<A2aAgent> discoveredAgents = new ArrayList<>();
+    ServiceLoader.load(A2aAgent.class).forEach(discoveredAgents::add);
+    LOG.atInfo().log(() -> "Discovered " + discoveredAgents.size() + " A2A agent provider(s)");
+
     String resourceIdField = resourceIdField();
     JsonObject config = configuration();
+    A2aAgent a2aAgent = selectA2aAgent(config, discoveredAgents);
     LOG.atDebug().log(() -> "Resolved MCP configuration: host=" + config.getString("mcp.host")
         + " port=" + config.getInteger("mcp.port")
         + " basePath=\"" + config.getString("mcp.basePath") + "\""
         + " authConfigured=" + !config.getString("mcp.authToken").isBlank()
         + " oauthEnabled=" + config.getBoolean("mcp.oauth.enabled")
         + " healthEnabled=" + config.getBoolean("mcp.healthEnabled")
+        + " a2aEnabled=" + config.getBoolean("a2a.enabled")
+        + " a2aHost=" + config.getString("a2a.host")
+        + " a2aPort=" + config.getInteger("a2a.port")
+        + " a2aBasePath=\"" + config.getString("a2a.basePath") + "\""
+        + " a2aAuthConfigured=" + !config.getString("a2a.authToken").isBlank()
         + " resourceIdField=" + resourceIdField);
 
     Vertx vertx = Vertx.vertx();
@@ -57,19 +69,43 @@ public final class Main {
     LOG.atDebug().log(() -> "Validated MCP tool registrations: "
         + tools.keySet().stream().sorted().toList());
     LOG.atDebug().log(() -> "Deploying MCP server verticle with " + tools.size() + " registered tool(s)");
-    vertx.deployVerticle(
+    var mcpDeployment = vertx.deployVerticle(
         new McpServerVerticle(tools, resourceIdField),
-        new DeploymentOptions().setConfig(config))
-      .onSuccess(id -> LOG.info("MCP server deployed: deploymentId=" + id
-          + " tools=" + tools.size()))
+        new DeploymentOptions().setConfig(config));
+    mcpDeployment.onSuccess(id -> LOG.info("MCP server deployed: deploymentId=" + id
+        + " tools=" + tools.size()));
+    mcpDeployment.compose(mcpId -> {
+      if (a2aAgent == null) return io.vertx.core.Future.succeededFuture(mcpId);
+      LOG.atDebug().log(() -> "Deploying A2A server verticle for agent=\""
+          + a2aAgent.agentCard().name() + "\"");
+      return vertx.deployVerticle(new A2aServerVerticle(a2aAgent),
+              new DeploymentOptions().setConfig(config))
+          .onSuccess(a2aId -> LOG.info("A2A server deployed: deploymentId=" + a2aId
+              + " agent=\"" + a2aAgent.agentCard().name() + "\""))
+          .recover(error -> vertx.undeploy(mcpId)
+              .onFailure(cleanup -> LOG.warn(
+                  "Unable to undeploy MCP after A2A startup failure", cleanup))
+              .compose(ignored -> io.vertx.core.Future.failedFuture(error),
+                  cleanup -> io.vertx.core.Future.failedFuture(error)))
+          .map(ignored -> mcpId);
+    })
       .onFailure(error -> {
-        LOG.error("Unable to start MCP server", error);
+        LOG.error("Unable to start server runtime", error);
         vertx.close()
             .onSuccess(ignored -> LOG.debug("Vert.x runtime closed after startup failure"))
             .onFailure(closeError -> LOG.warn(
                 "Vert.x close failed after startup failure", closeError))
             .onComplete(ignored -> System.exit(1));
       });
+  }
+
+  static A2aAgent selectA2aAgent(JsonObject config, List<A2aAgent> agents) {
+    if (!config.getBoolean("a2a.enabled", false)) return null;
+    if (agents.size() != 1) {
+      throw new IllegalStateException("a2a.enabled requires exactly one "
+          + A2aAgent.class.getName() + " service provider; discovered " + agents.size());
+    }
+    return agents.getFirst();
   }
 
   static void configureVertxLogging() {
@@ -125,7 +161,14 @@ public final class Main {
         .put("mcp.trustedProxies", setting(
             "mcp.trustedProxies", "MCP_TRUSTED_PROXIES", ""))
         .put("mcp.clientAddressHeader", setting(
-            "mcp.clientAddressHeader", "MCP_CLIENT_ADDRESS_HEADER", "X-Forwarded-For"));
+            "mcp.clientAddressHeader", "MCP_CLIENT_ADDRESS_HEADER", "X-Forwarded-For"))
+        .put("a2a.enabled", booleanSetting("a2a.enabled", "A2A_ENABLED", false))
+        .put("a2a.port", integerSetting("a2a.port", "A2A_PORT", 3002))
+        .put("a2a.host", setting("a2a.host", "A2A_HOST", "127.0.0.1"))
+        .put("a2a.basePath", setting("a2a.basePath", "A2A_BASE_PATH", "/a2a"))
+        .put("a2a.authToken", setting("a2a.authToken", "A2A_AUTH_TOKEN", ""))
+        .put("a2a.maxBodyBytes", longSetting(
+            "a2a.maxBodyBytes", "A2A_MAX_BODY_BYTES", 1_048_576L));
   }
 
   static String setting(String property, String environment, String fallback) {

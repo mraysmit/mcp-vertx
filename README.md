@@ -3,6 +3,19 @@
 A current-generation Model Context Protocol server framework implemented in
 Java 25 with Vert.x 5.
 
+The same runtime can optionally host one A2A v1.0 agent on an independent
+listener. MCP remains enabled by default; A2A is enabled only when an
+`A2aAgent` service provider is installed and `a2a.enabled=true`.
+
+## Guides
+
+- [User guide](docs/user-guide.md): installation, configuration, client calls,
+  security, logging, operations, and troubleshooting
+- [Developer guide](docs/developer-guide.md): architecture, MCP tool and A2A
+  agent SPIs, task storage, Vert.x rules, strict TDD, and release checks
+- [A2A guide](docs/a2a.md): focused A2A v1.0 route and provider reference
+- [Coding principles](docs/coding-principles.md): detailed engineering rules
+
 ## Protocol support
 
 - Extended MCP protocol revision `2026-07-28`, plus standard Streamable HTTP
@@ -18,6 +31,24 @@ Java 25 with Vert.x 5.
 Standard stateless `initialize` and `notifications/initialized` are supported;
 the deprecated stateful session protocol and legacy HTTP+SSE endpoints remain
 removed. `GET /mcp` and `DELETE /mcp` return `405 Method Not Allowed`.
+
+## A2A protocol support
+
+The optional A2A transport implements the stable v1.0 HTTP+JSON binding using
+the official A2A Java SDK records and generated protobuf schema:
+
+- Agent Card discovery at `GET /.well-known/agent-card.json`
+- `POST /a2a/message:send` and `POST /a2a/message:stream`
+- task retrieval, cursor-based listing, cancellation, and SSE subscription
+- version negotiation through `A2A-Version: 1.0`
+- `application/a2a+json` protocol responses and structured `google.rpc.Status`
+  error bodies
+- process-local task snapshots with terminal-state immutability and streaming
+  backpressure
+
+MCP and A2A are complementary and do not share a protocol endpoint. See
+[A2A architecture and provider guide](docs/a2a.md) for the SPI, route table,
+security model, and current limits.
 
 ## Build and run
 
@@ -79,7 +110,7 @@ java -jar target/mcp-vertx-0.3.0-SNAPSHOT.jar
 
 The defaults enable DEBUG for the application and Vert.x, INFO HTTP access
 records, and INFO for Netty without enabling payload-level wire dumps. Levels
-can optionally be tuned through `MCP_LOG_LEVEL`, `MCP_HTTP_LOG_LEVEL`,
+can optionally be tuned through `MCP_LOG_LEVEL`, `A2A_LOG_LEVEL`, `MCP_HTTP_LOG_LEVEL`,
 `VERTX_LOG_LEVEL`, `VERTX_WEB_LOG_LEVEL`, `NETTY_LOG_LEVEL`, and
 `ROOT_LOG_LEVEL` environment variables.
 
@@ -154,6 +185,12 @@ HTTPS; an HTTP issuer is accepted only on a loopback address for local testing.
 | `mcp.healthEnabled` | `MCP_HEALTH_ENABLED` | `false` |
 | `mcp.trustedProxies` | `MCP_TRUSTED_PROXIES` | empty |
 | `mcp.clientAddressHeader` | `MCP_CLIENT_ADDRESS_HEADER` | `X-Forwarded-For` |
+| `a2a.enabled` | `A2A_ENABLED` | `false` |
+| `a2a.port` | `A2A_PORT` | `3002` |
+| `a2a.host` | `A2A_HOST` | `127.0.0.1` |
+| `a2a.basePath` | `A2A_BASE_PATH` | `/a2a` |
+| `a2a.authToken` | `A2A_AUTH_TOKEN` | empty on loopback |
+| `a2a.maxBodyBytes` | `A2A_MAX_BODY_BYTES` | `1048576` |
 
 `mcp.allowedOrigins` is a comma-separated list of complete origins such as
 `https://client.example,https://admin.example`. Wildcard origins are rejected.

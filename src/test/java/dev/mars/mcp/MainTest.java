@@ -1,10 +1,17 @@
 package dev.mars.mcp;
 
+import dev.mars.a2a.A2aAgent;
 import dev.mars.mcp.testing.TestLoggingExtension;
+import io.vertx.core.Future;
 import io.vertx.core.json.JsonObject;
+import org.a2aproject.sdk.spec.AgentCard;
+import org.a2aproject.sdk.spec.EventKind;
+import org.a2aproject.sdk.spec.MessageSendParams;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -17,12 +24,28 @@ class MainTest {
       "MCP_VERTX_TEST_ENVIRONMENT_THAT_MUST_NOT_EXIST_9F01A5";
 
   @Test
+  void configures_dedicated_debug_logging_for_both_protocol_transports()
+      throws IOException {
+    try (var stream = Main.class.getResourceAsStream("/logback.xml")) {
+      assertNotNull(stream);
+      String configuration = new String(stream.readAllBytes(), StandardCharsets.UTF_8);
+      assertTrue(configuration.contains(
+          "<logger name=\"dev.mars.mcp\" level=\"${MCP_LOG_LEVEL:-DEBUG}\"/>"));
+      assertTrue(configuration.contains(
+          "<logger name=\"dev.mars.a2a\" level=\"${A2A_LOG_LEVEL:-DEBUG}\"/>"));
+    }
+  }
+
+  @Test
   void builds_configuration_from_system_properties() {
     Map<String, String> values = new LinkedHashMap<>();
     values.put("mcp.port", "4312");
     values.put("mcp.maxBodyBytes", "2048");
     values.put("mcp.healthEnabled", "TRUE");
     values.put("mcp.resourceIdField", "tenantId");
+    values.put("a2a.enabled", "true");
+    values.put("a2a.port", "4313");
+    values.put("a2a.basePath", "/agents/example");
 
     withProperties(values, () -> {
       JsonObject config = Main.configuration();
@@ -31,7 +54,24 @@ class MainTest {
       assertTrue(config.getBoolean("mcp.healthEnabled"));
       assertEquals("tenantId", Main.resourceIdField());
       assertTrue(config.containsKey("mcp.maxConcurrentToolCalls"));
+      assertTrue(config.getBoolean("a2a.enabled"));
+      assertEquals(4313, config.getInteger("a2a.port"));
+      assertEquals("/agents/example", config.getString("a2a.basePath"));
     });
+  }
+
+  @Test
+  void enables_a2a_only_with_exactly_one_agent_provider() {
+    A2aAgent agent = new StubAgent();
+    JsonObject disabled = new JsonObject().put("a2a.enabled", false);
+    JsonObject enabled = new JsonObject().put("a2a.enabled", true);
+
+    assertNull(Main.selectA2aAgent(disabled, java.util.List.of(agent)));
+    assertSame(agent, Main.selectA2aAgent(enabled, java.util.List.of(agent)));
+    assertThrows(IllegalStateException.class,
+        () -> Main.selectA2aAgent(enabled, java.util.List.of()));
+    assertThrows(IllegalStateException.class,
+        () -> Main.selectA2aAgent(enabled, java.util.List.of(agent, new StubAgent())));
   }
 
   @Test
@@ -122,5 +162,12 @@ class MainTest {
   private void restoreProperty(String key, String value) {
     if (value == null) System.clearProperty(key);
     else System.setProperty(key, value);
+  }
+
+  private static final class StubAgent implements A2aAgent {
+    @Override public AgentCard agentCard() { return null; }
+    @Override public Future<EventKind> sendMessage(MessageSendParams params) {
+      return Future.failedFuture("not used");
+    }
   }
 }
